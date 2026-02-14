@@ -13,7 +13,7 @@ pip install rift-local
 rift-local supports multiple ASR backends, each installed as an optional extra:
 
 ```bash
-pip install rift-local[sherpa]      # sherpa-onnx (Nemotron, Zipformer)
+pip install rift-local[sherpa]      # sherpa-onnx (Nemotron, Kroko)
 pip install rift-local[moonshine]   # Moonshine Gen 2 (via moonshine-voice)
 pip install rift-local[sherpa,moonshine]  # both
 ```
@@ -44,8 +44,7 @@ rift-local list --installed
 | Model | Params | Languages | Download | Notes |
 |-------|--------|-----------|----------|-------|
 | `nemotron-streaming-en` | 0.6B | EN | 447 MB | Best accuracy. |
-| `zipformer-small-en` | ~30M | EN | 296 MB | Lightweight, fast. |
-| `zipformer-bilingual-zh-en` | ~70M | ZH, EN | 487 MB | Bilingual Chinese + English. |
+| `zipformer-kroko-en` | ~30M | EN | 55 MB | Lightweight, fast. Only ~68 MB on disk. |
 
 Requires: `pip install rift-local[sherpa]`
 

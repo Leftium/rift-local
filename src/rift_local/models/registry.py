@@ -67,45 +67,25 @@ _MODELS: dict[str, ModelEntry] = {
         size_mb=600,
         download_mb=447,
     ),
-    "zipformer-small-en": ModelEntry(
-        name="zipformer-small-en",
+    "zipformer-kroko-en": ModelEntry(
+        name="zipformer-kroko-en",
         backend="sherpa-onnx",
         source=(
             "https://github.com/k2-fsa/sherpa-onnx/releases/download/"
             "asr-models/"
-            "sherpa-onnx-streaming-zipformer-en-2023-06-26.tar.bz2"
+            "sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06.tar.bz2"
         ),
         files={
             "tokens": "tokens.txt",
-            "encoder": "encoder-epoch-99-avg-1-chunk-16-left-128.int8.onnx",
-            "decoder": "decoder-epoch-99-avg-1-chunk-16-left-128.int8.onnx",
-            "joiner": "joiner-epoch-99-avg-1-chunk-16-left-128.int8.onnx",
+            "encoder": "encoder.onnx",
+            "decoder": "decoder.onnx",
+            "joiner": "joiner.onnx",
         },
-        display="Zipformer Small EN (int8, streaming)",
+        display="Zipformer Kroko EN (streaming)",
         params="~30M",
         languages=["en"],
-        size_mb=320,
-        download_mb=296,
-    ),
-    "zipformer-bilingual-zh-en": ModelEntry(
-        name="zipformer-bilingual-zh-en",
-        backend="sherpa-onnx",
-        source=(
-            "https://github.com/k2-fsa/sherpa-onnx/releases/download/"
-            "asr-models/"
-            "sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20.tar.bz2"
-        ),
-        files={
-            "tokens": "tokens.txt",
-            "encoder": "encoder-epoch-99-avg-1.onnx",
-            "decoder": "decoder-epoch-99-avg-1.onnx",
-            "joiner": "joiner-epoch-99-avg-1.onnx",
-        },
-        display="Zipformer Bilingual ZH+EN (streaming)",
-        params="~70M",
-        languages=["zh", "en"],
-        size_mb=370,
-        download_mb=487,
+        size_mb=68,
+        download_mb=55,
     ),
     # -- Moonshine (moonshine-voice) ------------------------------------
     # Moonshine manages its own model cache via get_model_for_language().
