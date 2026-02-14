@@ -11,6 +11,13 @@ license = "MIT"
 requires-python = ">=3.10"
 authors = [{ name = "Leftium" }]
 keywords = ["speech-recognition", "transcription", "asr", "whisper", "local-inference"]
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.34",
+    "numpy>=1.24",
+    "httpx>=0.28",
+    "pydantic>=2.0",
+]
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
     "Environment :: Console",
@@ -34,7 +41,7 @@ Issues = "https://github.com/Leftium/rift-local/issues"
 rift-local = "rift_local.cli:main"
 
 [project.optional-dependencies]
-sherpa = []
+sherpa = ["sherpa-onnx>=1.11"]
 moonshine = []
 mlx = []
 

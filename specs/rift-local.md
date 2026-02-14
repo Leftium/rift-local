@@ -100,7 +100,7 @@ The WebSocket interface handles all real-time and buffer-based audio interaction
 
 ### Connection
 
-Client opens `ws://localhost:{port}/ws` (default port: 8765).
+Client opens `ws://localhost:{port}/ws` (default port: 2177).
 
 ### Handshake (server -> client)
 
@@ -197,7 +197,7 @@ HTTP endpoints serve request/response operations: batch file transcription, LLM 
 Returns server and model metadata. Same content as the WS handshake `info` message.
 
 ```
-GET http://localhost:8765/info
+GET http://localhost:2177/info
 
 200 OK
 {
@@ -220,7 +220,7 @@ Useful for health checks, UI pre-population, and debugging ("is the server runni
 Batch transcription of an audio file. Accepts common audio formats (wav, mp3, m4a, ogg, flac) -- the server decodes to PCM internally using `soundfile` or `ffmpeg`. No need for the client to pre-process audio into raw Float32.
 
 ```
-POST http://localhost:8765/transcribe
+POST http://localhost:2177/transcribe
 Content-Type: multipart/form-data
 
 audio: <file>
@@ -263,7 +263,7 @@ For large files there is no size limit -- the server processes audio in chunks t
 LLM text transformation. Sends text through a local LLM with a prompt.
 
 ```
-POST http://localhost:8765/transform
+POST http://localhost:2177/transform
 Content-Type: application/json
 
 {
@@ -298,7 +298,7 @@ rift-local serve [OPTIONS]
 
 Options:
   --model NAME        ASR model to load (see 'rift-local list')   [default: nemotron-streaming-en]
-  --port PORT         Server port (WS + HTTP)                     [default: 8765]
+  --port PORT         Server port (WS + HTTP)                     [default: 2177]
   --host HOST         Bind address                                [default: 127.0.0.1]
   --device DEVICE     Compute device: cpu, cuda, coreml, mlx      [default: auto]
   --threads N         Number of inference threads                  [default: 2]
