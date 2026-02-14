@@ -1,0 +1,15 @@
+# Include essential files
+include README.md
+include LICENSE
+include pyproject.toml
+
+# Exclude build artifacts and local files
+exclude log.txt
+exclude uv.lock
+exclude .gitignore
+prune tests
+prune scripts
+prune specs
+prune .pytest_cache
+prune .ruff_cache
+prune .venv
