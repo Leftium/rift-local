@@ -20,6 +20,27 @@ rift-local serve --model mlx-whisper-large-v3-turbo --llm mlx:llama-3.2-3b
 
 ---
 
+## Implementation Status
+
+| Component | Status | Notes |
+| --- | --- | --- |
+| FastAPI server (WS + HTTP `/info`) | **Done** | Phase 1 |
+| sherpa-onnx backend adapter | **Done** | Full field serialization, NeMo confidence detection |
+| `info` handshake with model metadata | **Done** | Dynamic `features.confidence` based on model type |
+| Model registry (3 sherpa models) | **Done** | Nemotron, Zipformer small, Zipformer bilingual |
+| Auto-download (GitHub tarballs) | **Done** | With progress bar, extraction, cache validation |
+| `serve`, `list` CLI commands | **Done** | Phase 1 |
+| Tests (mock + integration) | **Done** | Phase 1 |
+| HTTP `POST /transcribe` | Not started | Phase 2 |
+| Moonshine backend | Not started | Phase 2 |
+| mlx-whisper backend | Not started | Phase 2 |
+| HuggingFace Hub integration | Not started | Phase 2 |
+| `transcribe`, `transform` CLI | Not started | Phase 2-3 |
+| LLM backends (mlx-lm, Ollama) | Not started | Phase 3 |
+| HTTP `POST /transform` | Not started | Phase 3 |
+
+---
+
 ## Why
 
 RIFT Transcription connects to local ASR engines over WebSocket. Today that means connecting directly to `sherpa-onnx-online-websocket-server`, a C++ binary. This works but has three problems that compound as RIFT grows:
@@ -100,7 +121,7 @@ The WebSocket interface handles all real-time and buffer-based audio interaction
 
 ### Connection
 
-Client opens `ws://localhost:{port}/ws` (default port: 2177).
+Client opens `ws://localhost:{port}/ws` (default port: 2177). The root path `ws://localhost:{port}/` is also accepted as an alias for `/ws`.
 
 ### Handshake (server -> client)
 
@@ -117,7 +138,7 @@ On connection, the server sends an `info` message before any transcription resul
 	"languages": ["en"],
 	"features": {
 		"timestamps": true,
-		"confidence": true,
+		"confidence": false,
 		"endpoint_detection": true,
 		"diarization": false
 	},
@@ -125,6 +146,8 @@ On connection, the server sends an `info` message before any transcription resul
 	"version": "0.1.0"
 }
 ```
+
+The `features.confidence` field is **model-dependent**. Nemotron (and other NeMo transducer models) report `false` because their sherpa-onnx decoder does not compute per-token log-probs. Standard transducers like Zipformer report `true`. Moonshine and other backends that lack per-token confidence also report `false`. The client uses this to skip confidence-based UI (e.g. per-word coloring) when the model cannot provide the data.
 
 The client can use this to display model info in the UI without any out-of-band configuration.
 
@@ -144,7 +167,9 @@ The server doesn't distinguish between these -- it receives Float32 frames and p
 
 ### Stop signal (client -> server)
 
-The string `"Done"` (text frame) signals end of audio. The server flushes any remaining audio through the recognizer with tail padding and sends final results.
+The string `"Done"` (text frame) signals end of audio. The server flushes any remaining audio through the recognizer by feeding ~0.4s of silent tail padding, then sends final results and closes the connection.
+
+**Implementation note:** The server deduplicates interim results -- it only sends a result message when the recognized text has changed since the last message. CPU-bound decode operations run in a worker thread (`asyncio.to_thread`) to keep the event loop responsive for WebSocket keepalive.
 
 ### Transcription result (server -> client)
 
@@ -416,8 +441,8 @@ Available models:
 
   Backend: sherpa-onnx
   * nemotron-streaming-en     600MB   Streaming, EN, 0.6B params (int8)
-    zipformer-small-en         55MB   Streaming, EN, fast/lightweight
-    zipformer-bilingual-zh-en 370MB   Streaming, ZH+EN
+    zipformer-small-en        320MB   Streaming, EN, ~30M params (int8)
+    zipformer-bilingual-zh-en 370MB   Streaming, ZH+EN, ~70M params
 
   Backend: moonshine
     moonshine-tiny             34MB   Streaming, EN, 34M params
@@ -493,39 +518,52 @@ Sherpa-onnx models are distributed as tarballs on GitHub releases, not on Huggin
 rift-local maintains an internal registry mapping friendly model names to download sources and file layouts:
 
 ```python
+@dataclass(frozen=True)
+class ModelEntry:
+    name: str
+    backend: str
+    source: str          # Download URL (tarball) or HuggingFace repo ID
+    display: str
+    params: str
+    languages: list[str]
+    size_mb: int         # Extracted model size on disk
+    download_mb: int | None = None  # Download size (tarball); None = same as size_mb
+    streaming: bool = True
+    platform: str | None = None     # None = all platforms, "darwin" = macOS only
+    files: dict[str, str] = field(default_factory=dict)  # Logical role -> filename
+
 MODELS = {
-    "nemotron-streaming-en": {
-        "backend": "sherpa-onnx",
-        "source": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemotron-speech-streaming-en-0.6b-int8-2026-01-14.tar.bz2",
-        "files": {
-            "tokens": "tokens.txt",
-            "encoder": "encoder.int8.onnx",
-            "decoder": "decoder.int8.onnx",
-            "joiner": "joiner.int8.onnx",
-        },
-        "display": "Nemotron Streaming EN 0.6B (int8)",
-        "params": "0.6B",
-        "languages": ["en"],
-        "size_mb": 600,
-    },
-    "moonshine-medium": {
-        "backend": "moonshine",
-        "source": "usefulsensors/moonshine-medium",  # HuggingFace repo ID
-        "display": "Moonshine Medium (245M)",
-        "params": "245M",
-        "languages": ["en"],
-        "size_mb": 245,
-    },
-    "mlx-whisper-large-v3-turbo": {
-        "backend": "mlx-whisper",
-        "source": "mlx-community/whisper-large-v3-turbo",  # HuggingFace repo ID
-        "display": "Whisper Large V3 Turbo (MLX)",
-        "params": "809M",
-        "languages": ["multilingual"],
-        "streaming": False,
-        "size_mb": 800,
-        "platform": "darwin",  # macOS only
-    },
+    "nemotron-streaming-en": ModelEntry(
+        name="nemotron-streaming-en",
+        backend="sherpa-onnx",
+        source="https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemotron-speech-streaming-en-0.6b-int8-2026-01-14.tar.bz2",
+        files={"tokens": "tokens.txt", "encoder": "encoder.int8.onnx", "decoder": "decoder.int8.onnx", "joiner": "joiner.int8.onnx"},
+        display="Nemotron Streaming EN 0.6B (int8)",
+        params="0.6B",
+        languages=["en"],
+        size_mb=600,
+        download_mb=447,
+    ),
+    "moonshine-medium": ModelEntry(   # NOT YET IMPLEMENTED
+        name="moonshine-medium",
+        backend="moonshine",
+        source="usefulsensors/moonshine-medium",  # HuggingFace repo ID
+        display="Moonshine Medium (245M)",
+        params="245M",
+        languages=["en"],
+        size_mb=245,
+    ),
+    "mlx-whisper-large-v3-turbo": ModelEntry(   # NOT YET IMPLEMENTED
+        name="mlx-whisper-large-v3-turbo",
+        backend="mlx-whisper",
+        source="mlx-community/whisper-large-v3-turbo",  # HuggingFace repo ID
+        display="Whisper Large V3 Turbo (MLX)",
+        params="809M",
+        languages=["multilingual"],
+        streaming=False,
+        size_mb=800,
+        platform="darwin",  # macOS only
+    ),
 }
 ```
 
@@ -589,7 +627,11 @@ message = {
 }
 ```
 
-**Install:** `pip install rift-local[sherpa]` (sherpa-onnx is an optional dependency since it pulls in ONNX Runtime).
+**NeMo transducer detection.** sherpa-onnx internally routes NeMo transducer models (Nemotron, Parakeet TDT, etc.) through a separate greedy-search decoder (`OnlineRecognizerTransducerNeMoImpl`) that does not compute per-token log-probs (`ys_probs`). The adapter detects this at init by inspecting the decoder ONNX file's output count: NeMo decoders have 4+ output nodes, standard transducers have 1. When a NeMo decoder is detected, the adapter reports `features.confidence: false` in the info handshake. This requires the `onnx` package (included in the `sherpa` extra). If `onnx` is unavailable, the adapter optimistically assumes a standard decoder. Upstream issue: [k2-fsa/sherpa-onnx#3181](https://github.com/k2-fsa/sherpa-onnx/issues/3181).
+
+**Endpoint detection** uses three trailing-silence rules: 2.4s silence (rule 1), 1.2s silence (rule 2), and 20s max utterance length (rule 3). Decoding method is greedy search.
+
+**Install:** `pip install rift-local[sherpa]` (pulls in `sherpa-onnx` and `onnx` for model introspection).
 
 ### Moonshine
 
@@ -812,46 +854,49 @@ rift-local transcribe meeting.wav | rift-local transform \
 
 ## Phased Rollout
 
-### Phase 1: Streaming ASR bridge (validates protocol)
+### Phase 1: Streaming ASR bridge (validates protocol) -- COMPLETE
 
-- FastAPI server with WS endpoint
-- sherpa-onnx backend adapter with full field serialization
-- `info` handshake with model metadata
-- Model registry with 2-3 sherpa models (Nemotron, Zipformer small, Zipformer bilingual)
-- Auto-download for sherpa GitHub release tarballs
-- `serve`, `list` CLI commands
-- **Validates against:** existing RIFT `sherpa.svelte.ts` client (minor update to handle `type` field and display `model`)
+- [x] FastAPI server with WS endpoint (+ root `/` alias)
+- [x] sherpa-onnx backend adapter with full field serialization
+- [x] `info` handshake with model metadata (including dynamic `features.confidence`)
+- [x] Model registry with 3 sherpa models (Nemotron, Zipformer small, Zipformer bilingual)
+- [x] Auto-download for sherpa GitHub release tarballs
+- [x] `serve`, `list` CLI commands
+- [x] HTTP `GET /info` endpoint (pulled forward from Phase 2)
+- [x] Tests: mock backend unit tests + real sherpa-onnx integration tests
+- [x] NeMo transducer detection for honest confidence reporting
+- [ ] **Validates against:** existing RIFT `sherpa.svelte.ts` client (minor update to handle `type` field and display `model`) -- needs testing
 
 ### Phase 2: Batch + Moonshine + MLX Whisper + model metadata in RIFT UI
 
-- HTTP `POST /transcribe` endpoint (file upload with audio decoding)
-- HTTP `GET /info` endpoint
-- `rift-local transcribe` CLI command
-- Moonshine backend adapter
-- mlx-whisper backend adapter (macOS Apple Silicon, batch only)
-- HuggingFace Hub integration for model downloads (shared by Moonshine and MLX models)
-- Platform detection: show/hide MLX models based on system capabilities
-- RIFT client displays model name from `info` handshake
-- `info`, `cache` CLI commands
-- `pip install rift-local[mlx]` optional extra
+- [ ] HTTP `POST /transcribe` endpoint (file upload with audio decoding)
+- [x] ~~HTTP `GET /info` endpoint~~ (done in Phase 1)
+- [ ] `rift-local transcribe` CLI command
+- [ ] Moonshine backend adapter
+- [ ] mlx-whisper backend adapter (macOS Apple Silicon, batch only)
+- [ ] HuggingFace Hub integration for model downloads (shared by Moonshine and MLX models)
+- [ ] Platform detection: show/hide MLX models based on system capabilities
+- [ ] RIFT client displays model name from `info` handshake
+- [ ] `info`, `cache` CLI commands
+- [ ] `pip install rift-local[mlx]` optional extra
 
 ### Phase 3: LLM transforms
 
-- HTTP `POST /transform` endpoint
-- `rift-local transform` CLI command
-- `--transform` flag on `rift-local transcribe`
-- mlx-lm backend for Apple Silicon (in-process, shares `mlx` runtime with mlx-whisper)
-- Ollama backend (HTTP API, cross-platform fallback)
-- `--llm` flag with backend prefix (`mlx:`, `ollama:`, `openai:`)
-- Auto-detection: prefer mlx-lm on Apple Silicon, Ollama elsewhere
+- [ ] HTTP `POST /transform` endpoint
+- [ ] `rift-local transform` CLI command
+- [ ] `--transform` flag on `rift-local transcribe`
+- [ ] mlx-lm backend for Apple Silicon (in-process, shares `mlx` runtime with mlx-whisper)
+- [ ] Ollama backend (HTTP API, cross-platform fallback)
+- [ ] `--llm` flag with backend prefix (`mlx:`, `ollama:`, `openai:`)
+- [ ] Auto-detection: prefer mlx-lm on Apple Silicon, Ollama elsewhere
 
 ### Phase 4: Polish
 
-- `--device` flag (CUDA, CoreML, MLX auto-detection)
-- SRT/VTT output format for `transcribe`
-- Error messages for missing optional dependencies ("Install MLX support: `pip install rift-local[mlx]`")
-- Graceful handling of model download interruptions (resume partial downloads)
-- Additional ASR backends (faster-whisper for high-accuracy batch, Qwen3-ASR, Parakeet MLX)
+- [ ] `--device` flag (CUDA, CoreML, MLX auto-detection)
+- [ ] SRT/VTT output format for `transcribe`
+- [ ] Error messages for missing optional dependencies ("Install MLX support: `pip install rift-local[mlx]`")
+- [ ] Graceful handling of model download interruptions (resume partial downloads)
+- [ ] Additional ASR backends (faster-whisper for high-accuracy batch, Qwen3-ASR, Parakeet MLX)
 
 ---
 
