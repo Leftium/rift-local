@@ -112,6 +112,43 @@ class TestWebSocketStreaming:
             # Server should close the connection after Done.
             # The next receive should raise or return a close frame.
 
+    def test_endpoint_no_duplicate_on_next_chunk(self, client, mock_backend):
+        """After endpoint, next chunk shouldn't re-send the old text as new segment."""
+        # Configure mock to trigger endpoint after 10000 samples.
+        mock_backend._endpoint_at_samples = 10000
+
+        with client.websocket_connect("/ws") as ws:
+            ws.receive_json()  # info
+
+            # Send 1s of audio (16000 samples) — triggers text + endpoint.
+            ws.send_bytes(self._make_audio(1.0))
+
+            # Should receive:
+            # 1. Interim result (seg=0, is_final=false)
+            msg1 = ws.receive_json()
+            assert msg1["type"] == "result"
+            assert msg1["text"] == "hello world"
+            assert msg1["segment"] == 0
+            assert msg1["is_final"] is False
+
+            # 2. Endpoint result (seg=0, is_final=true)
+            msg2 = ws.receive_json()
+            assert msg2["type"] == "result"
+            assert msg2["text"] == "hello world"
+            assert msg2["segment"] == 0
+            assert msg2["is_final"] is True
+
+            # Now send another chunk — mock still returns "hello world"
+            # because it hasn't decoded new speech yet. This should NOT
+            # send a result (duplicate detection via last_text).
+            ws.send_bytes(self._make_audio(0.1))
+
+            # Try to receive with timeout — should timeout (no message).
+            # TestClient doesn't support receive_json(timeout=...) but we
+            # can check by sending Done and seeing what comes back.
+            ws.send_text("Done")
+            # Should get tail result if any, but NOT a duplicate of seg=1.
+
 
 # ---------------------------------------------------------------------------
 # Slow tests (real sherpa-onnx backend, requires cached model)

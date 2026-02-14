@@ -167,7 +167,9 @@ def create_app(backend: BackendAdapter) -> FastAPI:
                                 )
                             )
                             segment += 1
-                            last_text = ""  # New segment starts fresh.
+                            # Preserve the endpoint text to prevent duplication
+                            # when the next chunk arrives but no new speech decoded yet.
+                            last_text = out.endpoint_result.text
 
                     elif "text" in message and message["text"]:
                         text = message["text"]

@@ -58,6 +58,7 @@ class MockBackend:
         self._text = ""
         self._samples_fed = 0
         self._decoded = False
+        self._endpoint_at_samples = None  # Trigger endpoint after N samples.
 
     def create_stream(self) -> object:
         self._text = ""
@@ -87,11 +88,14 @@ class MockBackend:
         )
 
     def is_endpoint(self, stream: object) -> bool:
-        return False
+        if self._endpoint_at_samples is None:
+            return False
+        return self._samples_fed >= self._endpoint_at_samples
 
     def reset(self, stream: object) -> None:
         self._text = ""
         self._samples_fed = 0
+        self._endpoint_at_samples = None
 
     def get_info(self) -> InfoMessage:
         return _MOCK_INFO
