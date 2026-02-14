@@ -4,18 +4,21 @@ Local inference server for [RIFT Transcription](https://github.com/Leftium/rift-
 
 ```
 pip install rift-local
-rift-local serve --model nemotron-streaming-en
+rift-local serve --asr nemotron-en
 ```
 
 ```
 rift-local transcribe meeting.wav --transform "Fix punctuation and add paragraphs"
 ```
 
-On Apple Silicon, install with MLX support for native GPU-accelerated batch transcription and LLM transforms:
+Load multiple ASR models for different tasks -- streaming for live mic, batch for high-accuracy re-transcription, LLM for text cleanup:
 
 ```
 pip install rift-local[mlx]
-rift-local serve --model mlx-whisper-large-v3-turbo --llm mlx:llama-3.2-3b
+rift-local serve \
+  --asr nemotron-en \
+  --asr mlx-whisper-large-v3-turbo \
+  --llm mlx:llama-3.2-3b
 ```
 
 ---
@@ -25,16 +28,20 @@ rift-local serve --model mlx-whisper-large-v3-turbo --llm mlx:llama-3.2-3b
 | Component | Status | Notes |
 | --- | --- | --- |
 | FastAPI server (WS + HTTP `/info`) | **Done** | Phase 1 |
-| sherpa-onnx backend adapter | **Done** | Full field serialization, NeMo confidence detection |
+| sherpa-onnx online (streaming) adapter | **Done** | Full field serialization, NeMo confidence detection |
 | `info` handshake with model metadata | **Done** | Dynamic `features.confidence` based on model type |
-| Model registry (3 sherpa models) | **Done** | Nemotron, Zipformer small, Zipformer bilingual |
+| Model registry (5 models) | **Done** | Nemotron, Zipformer, 3 Moonshine |
 | Auto-download (GitHub tarballs) | **Done** | With progress bar, extraction, cache validation |
 | `serve`, `list` CLI commands | **Done** | Phase 1 |
 | Tests (mock + integration) | **Done** | Phase 1 |
+| Moonshine backend adapter | **Done** | Pull wrapper around push API; 3 streaming models |
+| PyPI publication infrastructure | **Done** | Build script, TestPyPI verified |
+| Multi-model loading (`--asr` repeatable) | Not started | Phase 2 |
+| sherpa-onnx offline (batch) adapter | Not started | Phase 2 |
+| Batch model registry entries (Parakeet TDT) | Not started | Phase 2 |
 | HTTP `POST /transcribe` | Not started | Phase 2 |
-| Moonshine backend | Not started | Phase 2 |
-| mlx-whisper backend | Not started | Phase 2 |
-| HuggingFace Hub integration | Not started | Phase 2 |
+| `rift-local transcribe` CLI command | Not started | Phase 2 |
+| mlx-whisper backend adapter | Not started | Phase 2 |
 | `transcribe`, `transform` CLI | Not started | Phase 2-3 |
 | LLM backends (mlx-lm, Ollama) | Not started | Phase 3 |
 | HTTP `POST /transform` | Not started | Phase 3 |
@@ -73,24 +80,26 @@ Beyond streaming, RIFT needs two more capabilities that no existing server provi
                            rift-local (single FastAPI process)
                           ┌─────────────────────────────────────────┐
 Browser (RIFT)            │                                         │     ASR Engines
-┌──────────────┐    WS    │  WS /ws                                 │    ┌──────────────┐
-│  AudioWorklet├─────────>│    ├── streaming ASR (live mic)         │    │  sherpa-onnx  │
-│  (live)      │<─────────│    ├── batch ASR (from buffer)    ──────┼───>│  OnlineRecog  │
-│              │          │    └── re-transcribe (segment)          │    └──────────────┘
-└──────────────┘          │                                         │    ┌──────────────┐
-                          │  HTTP                                   │    │  Moonshine    │
-External / CLI            │    ├── POST /transcribe (file)    ──────┼───>│  MicTranscr   │
-┌──────────────┐   HTTP   │    ├── POST /transform (LLM)           │    └──────────────┘
-│  curl / app  ├─────────>│    └── GET  /info (metadata)           │    ┌──────────────┐
-│              │<─────────│                                         │    │  mlx-whisper  │
-└──────────────┘          │  Core pipeline                          │    │  (macOS only) │
-                          │    audio frames ──> engine ──> results  │    └──────────────┘
-CLI (no server)           │                                         │    ┌──────────────┐
-┌──────────────┐          │  Model Registry                         │    │  LLM backend  │
-│ rift-local   │          │    (download + cache)                    │    │  (mlx-lm/    │
-│  transcribe  ├──────────┤                                         │    │   ollama/     │
-│  transform   │  direct  │  Backend Adapters                       │    │   llama.cpp)  │
-└──────────────┘          │    ├── sherpa-onnx                      │    └──────────────┘
+┌──────────────┐    WS    │  WS /ws?asr=...                          │    ┌──────────────┐
+│  AudioWorklet├─────────>│    ├── live ASR (mic, real-time)        │    │  sherpa-onnx  │
+│  (live)      │<─────────│    ├── batch ASR (from buffer)    ──────┼───>│  Online+      │
+│              │          │    └── re-transcribe (segment)          │    │  OfflineRecog │
+└──────────────┘          │                                         │    └──────────────┘
+                          │  HTTP                                   │    ┌──────────────┐
+External / CLI            │    ├── POST /transcribe (file+model) ───┼───>│  Moonshine    │
+┌──────────────┐   HTTP   │    ├── POST /transform (LLM)           │    │  MicTranscr   │
+│  curl / app  ├─────────>│    └── GET  /info (all loaded models)  │    └──────────────┘
+│              │<─────────│                                         │    ┌──────────────┐
+└──────────────┘          │  Loaded models (1-N ASR + optional LLM) │    │  mlx-whisper  │
+                          │    model_a ──> adapter instance          │    │  (macOS only) │
+CLI (no server)           │    model_b ──> adapter instance          │    └──────────────┘
+┌──────────────┐          │    llm     ──> LLM adapter              │    ┌──────────────┐
+│ rift-local   │          │                                         │    │  LLM backend  │
+│  transcribe  ├──────────┤  Model Registry                         │    │  (mlx-lm/    │
+│  transform   │  direct  │    (download + cache)                    │    │   ollama/     │
+└──────────────┘          │                                         │    │   llama.cpp)  │
+                          │  Backend Adapters                       │    └──────────────┘
+                          │    ├── sherpa-onnx (online + offline)   │
                           │    ├── moonshine                        │
                           │    ├── mlx-whisper (macOS)              │
                           │    └── (future)                         │
@@ -106,10 +115,10 @@ Both share the same core pipeline, model registry, and backend adapters.
 
 **Key design choices:**
 
-- **One process, one model.** rift-local loads one ASR model at startup and serves it. To switch models, restart with a different `--model` flag. This keeps memory predictable and avoids GPU contention.
+- **One process, N models.** rift-local loads zero or more ASR models at startup via repeatable `--asr` flags, plus an optional `--llm` for text transforms. At least one of `--asr` or `--llm` is required. The first `--asr` is the default; any endpoint accepts an `asr=` parameter to select a different loaded model. This supports common configurations like "streaming model for live mic + batch model for re-transcription" without running multiple server instances, or LLM-only mode when transcription is handled externally (e.g. Web Speech API). Memory usage scales with the number of loaded models -- practical limit is typically 1-2 ASR models + 1 LLM on 16GB machines.
+- **Models are peers, not roles.** There is no hardcoded "streaming slot" or "batch slot." All loaded ASR models are available to all endpoints. The server does not gatekeep which model can serve which endpoint -- a batch-only model can serve live WS (with VAD-based simulated streaming and higher latency), and a streaming model can serve `POST /transcribe` (by feeding audio through its incremental pipeline). The user chooses the model per request; the server reports each model's capabilities so clients can make informed choices.
 - **Single-user by default.** RIFT is a personal tool. The server processes one audio stream at a time with `max-batch-size=1` for lowest latency. Multi-client support is not a goal.
 - **Localhost only.** The server binds to `127.0.0.1` by default. No auth, no TLS -- it's a local IPC mechanism. RIFT's Vite dev proxy (`/ws/sherpa` -> `ws://localhost:PORT`) handles remote/ngrok scenarios.
-- **WS is the core pipeline.** The WebSocket handler contains the real audio processing loop. The HTTP `/transcribe` endpoint is a thin wrapper that decodes an uploaded audio file, feeds it through the same pipeline, and collects results. This means one code path for audio processing regardless of how audio arrives.
 - **HTTP for request/response.** Batch file uploads and LLM text transforms are request/response operations. HTTP is the natural fit: `curl`-testable, no connection lifecycle, standard error codes. Audio file decoding (wav, mp3, m4a) happens server-side in the HTTP path.
 - **Platform-conditional backends.** MLX backends (mlx-whisper for ASR, mlx-lm for LLM transforms) only run on macOS Apple Silicon. They are optional extras (`pip install rift-local[mlx]`) that provide native Apple Silicon performance. On other platforms, sherpa-onnx/Moonshine handle ASR and Ollama handles LLM transforms. The core pipeline and protocol are identical regardless of backend -- the platform difference is an installation choice, not a protocol difference.
 
@@ -123,6 +132,8 @@ The WebSocket interface handles all real-time and buffer-based audio interaction
 
 Client opens `ws://localhost:{port}/ws` (default port: 2177). The root path `ws://localhost:{port}/` is also accepted as an alias for `/ws`.
 
+**Model selection:** To use a specific loaded ASR model, append a query parameter: `ws://localhost:{port}/ws?asr=parakeet-en-v2`. If omitted, the server uses the default model (first `--asr` from startup). If the requested model is not loaded, the server sends an error message and closes the connection.
+
 ### Handshake (server -> client)
 
 On connection, the server sends an `info` message before any transcription results:
@@ -130,7 +141,7 @@ On connection, the server sends an `info` message before any transcription resul
 ```json
 {
 	"type": "info",
-	"model": "nemotron-streaming-en",
+	"model": "nemotron-en",
 	"model_display": "Nemotron Streaming EN 0.6B (int8)",
 	"params": "0.6B",
 	"backend": "sherpa-onnx",
@@ -148,6 +159,8 @@ On connection, the server sends an `info` message before any transcription resul
 ```
 
 The `features.confidence` field is **model-dependent**. Nemotron (and other NeMo transducer models) report `false` because their sherpa-onnx decoder does not compute per-token log-probs. Standard transducers like Zipformer report `true`. Moonshine and other backends that lack per-token confidence also report `false`. The client uses this to skip confidence-based UI (e.g. per-word coloring) when the model cannot provide the data.
+
+The `streaming` field reports whether this model supports true incremental streaming. Batch-only models (e.g. Parakeet TDT, mlx-whisper) report `streaming: false`. These models can still serve live audio via VAD-based simulated streaming (see [Simulated Streaming](#simulated-streaming)), but with higher latency -- results arrive after each utterance pause rather than word-by-word. The client can use this to adjust UI expectations (e.g. show a "batch mode" indicator).
 
 The client can use this to display model info in the UI without any out-of-band configuration.
 
@@ -185,7 +198,7 @@ The string `"Done"` (text frame) signals end of audio. The server flushes any re
 	"start_time": 0.0,
 	"segment": 0,
 	"is_final": false,
-	"model": "nemotron-streaming-en"
+	"model": "nemotron-en"
 }
 ```
 
@@ -219,26 +232,53 @@ HTTP endpoints serve request/response operations: batch file transcription, LLM 
 
 ### `GET /info`
 
-Returns server and model metadata. Same content as the WS handshake `info` message.
+Returns server metadata and all loaded models. RIFT uses this to populate the model picker and determine which models support streaming vs batch.
 
 ```
 GET http://localhost:2177/info
 
 200 OK
 {
-  "model": "nemotron-streaming-en",
-  "model_display": "Nemotron Streaming EN 0.6B (int8)",
-  "params": "0.6B",
-  "backend": "sherpa-onnx",
-  "streaming": true,
-  "languages": ["en"],
-  "features": { ... },
-  "sample_rate": 16000,
-  "version": "0.1.0"
+  "version": "0.1.0",
+  "default_asr": "nemotron-en",
+  "asr": {
+    "nemotron-en": {
+      "model_display": "Nemotron Streaming EN 0.6B (int8)",
+      "params": "0.6B",
+      "backend": "sherpa-onnx",
+      "streaming": true,
+      "languages": ["en"],
+      "features": {
+        "timestamps": true,
+        "confidence": false,
+        "endpoint_detection": true,
+        "diarization": false
+      },
+      "sample_rate": 16000
+    },
+    "parakeet-en-v2": {
+      "model_display": "Parakeet TDT 0.6B v2 EN (int8)",
+      "params": "0.6B",
+      "backend": "sherpa-onnx",
+      "streaming": false,
+      "languages": ["en"],
+      "features": {
+        "timestamps": true,
+        "confidence": true,
+        "endpoint_detection": false,
+        "diarization": false
+      },
+      "sample_rate": 16000
+    }
+  },
+  "llm": {
+    "model": "llama-3.2-3b",
+    "backend": "mlx-lm"
+  }
 }
 ```
 
-Useful for health checks, UI pre-population, and debugging ("is the server running and what model is loaded?").
+The `asr` dict may have zero, one, or many entries. Zero ASR models is valid when the server is used only for LLM transforms (transcription handled elsewhere, e.g. Web Speech API). `default_asr` is `null` when no ASR models are loaded. The `llm` field is `null` if no LLM is configured. At least one of `--asr` or `--llm` is required. Useful for health checks, UI pre-population, and debugging.
 
 ### `POST /transcribe`
 
@@ -249,6 +289,7 @@ POST http://localhost:2177/transcribe
 Content-Type: multipart/form-data
 
 audio: <file>
+asr: parakeet-en-v2      (optional, defaults to server's default ASR model)
 
 200 OK
 {
@@ -263,15 +304,17 @@ audio: <file>
       "timestamps": [...]
     }
   ],
-  "model": "nemotron-streaming-en",
+  "model": "parakeet-en-v2",
   "duration": 12.5,
   "processing_time": 3.2
 }
 ```
 
-**Internally**, the HTTP handler decodes the audio file to Float32 PCM, feeds it through the same pipeline as the WebSocket handler, collects all results, and returns them as a single JSON response.
+The `asr` field selects which loaded ASR model to use. If omitted, the server's default model is used. If the requested model is not loaded, the server returns `400 Bad Request` with an error listing available models.
 
-For large files there is no size limit -- the server processes audio in chunks through the streaming pipeline. Upload progress is handled natively by HTTP clients. Processing progress (how far through the file) is not available in the response; for progress feedback on large files, use the WebSocket interface instead.
+**Internally**, the HTTP handler decodes the audio file to Float32 PCM, then routes to the appropriate adapter for the selected model. For streaming models, audio is fed through the incremental pipeline. For batch models (sherpa-onnx offline, mlx-whisper), the full audio is processed at once.
+
+For large files there is no size limit -- the server processes audio in chunks through the streaming pipeline (or as a single pass for batch models). Upload progress is handled natively by HTTP clients. Processing progress (how far through the file) is not available in the response; for progress feedback on large files, use the WebSocket interface instead.
 
 **Why both WS and HTTP for batch?**
 
@@ -322,7 +365,9 @@ Start the WebSocket + HTTP server.
 rift-local serve [OPTIONS]
 
 Options:
-  --model NAME        ASR model to load (see 'rift-local list')   [default: nemotron-streaming-en]
+  --asr NAME          ASR model to load (repeatable)              [default: nemotron-en]
+                      First --asr is the default for all endpoints.
+                      Additional --asr flags load extra models available by name.
   --port PORT         Server port (WS + HTTP)                     [default: 2177]
   --host HOST         Bind address                                [default: 127.0.0.1]
   --device DEVICE     Compute device: cpu, cuda, coreml, mlx      [default: auto]
@@ -330,6 +375,29 @@ Options:
   --llm MODEL         LLM for /transform endpoint (optional)      [default: none]
                       Prefix selects backend: mlx:, ollama:, openai:
                       Examples: mlx:llama-3.2-3b, ollama:llama3.2:3b
+```
+
+Examples:
+
+```bash
+# Single model (most common)
+rift-local serve --asr nemotron-en
+
+# Streaming + batch for re-transcription
+rift-local serve --asr nemotron-en --asr parakeet-en-v2
+
+# Batch-only mode (no live streaming, higher accuracy)
+rift-local serve --asr parakeet-en-v2
+
+# Full setup: streaming + batch + LLM transforms
+rift-local serve --asr nemotron-en --asr mlx-whisper-large-v3-turbo \
+  --llm mlx:llama-3.2-3b
+
+# Two streaming models: lightweight default + heavier for on-demand use
+rift-local serve --asr moonshine-en-tiny --asr nemotron-en
+
+# LLM-only mode (no ASR -- transcription via Web Speech API or cloud)
+rift-local serve --llm mlx:llama-3.2-3b
 ```
 
 On first run with a given model, rift-local downloads the model files automatically with a progress bar, then starts serving.
@@ -344,7 +412,7 @@ Transcribe an audio file directly. No server process required.
 rift-local transcribe FILE [OPTIONS]
 
 Options:
-  --model NAME        ASR model to use                            [default: nemotron-streaming-en]
+  --asr NAME          ASR model to use                            [default: nemotron-en]
   --format FORMAT     Output format: text, json, srt              [default: text]
   --output FILE       Write output to file instead of stdout
   --transform PROMPT  Apply LLM transform to result (requires --llm)
@@ -352,11 +420,16 @@ Options:
   --device DEVICE     Compute device: cpu, cuda, coreml, mlx      [default: auto]
 ```
 
+The CLI loads a single ASR model per invocation. Any model (streaming or batch) can be used -- streaming models process audio through their incremental pipeline, batch models process the full file at once.
+
 Examples:
 
 ```bash
-# Simple transcription
+# Simple transcription (streaming model, incremental pipeline)
 rift-local transcribe meeting.wav
+
+# Batch model for higher accuracy
+rift-local transcribe meeting.wav --asr parakeet-en-v2
 
 # JSON output with word-level detail
 rift-local transcribe meeting.wav --format json
@@ -368,14 +441,11 @@ rift-local transcribe meeting.wav --llm mlx:llama-3.2-3b \
 # Pipeline with other tools
 rift-local transcribe meeting.wav | grep "action item"
 
-# Different model for better accuracy
-rift-local transcribe podcast.mp3 --model whisper-large-v3
-
 # MLX Whisper on Apple Silicon (batch, high accuracy)
-rift-local transcribe podcast.mp3 --model mlx-whisper-large-v3-turbo
+rift-local transcribe podcast.mp3 --asr mlx-whisper-large-v3-turbo
 
 # Full MLX pipeline: transcribe + transform, no external services
-rift-local transcribe meeting.wav --model mlx-whisper-large-v3-turbo \
+rift-local transcribe meeting.wav --asr mlx-whisper-large-v3-turbo \
   --llm mlx:llama-3.2-3b --transform "Fix punctuation and add paragraphs"
 ```
 
@@ -439,17 +509,20 @@ Example output:
 ```
 Available models:
 
-  Backend: sherpa-onnx
-  * nemotron-streaming-en     600MB   Streaming, EN, 0.6B params (int8)
-    zipformer-small-en        320MB   Streaming, EN, ~30M params (int8)
-    zipformer-bilingual-zh-en 370MB   Streaming, ZH+EN, ~70M params
+  Backend: sherpa-onnx (streaming)
+  * nemotron-en               600MB   Streaming, EN, 0.6B params (int8)
+    zipformer-en-kroko         68MB   Streaming, EN, ~30M params
 
-  Backend: moonshine
-    moonshine-tiny             34MB   Streaming, EN, 34M params
-    moonshine-small           123MB   Streaming, EN, 123M params
-    moonshine-medium          245MB   Streaming, EN, 245M params
+  Backend: sherpa-onnx (batch)
+    parakeet-en-v2            600MB   Batch, EN, 0.6B params (int8)
+    parakeet-multi-v3         600MB   Batch, 25 langs, 0.6B params (int8)
 
-  Backend: mlx-whisper (macOS Apple Silicon)
+  Backend: moonshine (streaming)
+    moonshine-en-tiny          26MB   Streaming, EN, 34M params
+    moonshine-en-small         95MB   Streaming, EN, 123M params
+    moonshine-en-medium       190MB   Streaming, EN, 245M params
+
+  Backend: mlx-whisper (macOS Apple Silicon, batch)
     mlx-whisper-large-v3-turbo 800MB  Batch, multilingual, 809M params (recommended)
     mlx-whisper-large-v3       1.5GB  Batch, multilingual, highest accuracy
     mlx-whisper-small.en       240MB  Batch, EN, fast
@@ -465,16 +538,16 @@ The `mlx-whisper` section only appears on macOS Apple Silicon systems. On other 
 Show details about a specific model.
 
 ```
-rift-local info nemotron-streaming-en
+rift-local info nemotron-en
 
-  Name:       nemotron-streaming-en
+  Name:       nemotron-en
   Display:    Nemotron Streaming EN 0.6B (int8)
   Backend:    sherpa-onnx
   Params:     0.6B
   Size:       600MB
   Languages:  en
   Streaming:  yes
-  Cached:     yes (~/.cache/rift-local/models/nemotron-streaming-en/)
+  Cached:     yes (~/.cache/rift-local/models/nemotron-en/)
 ```
 
 #### `rift-local cache`
@@ -489,12 +562,13 @@ Options:
 
 rift-local cache
 
-  nemotron-streaming-en     598MB   ~/.cache/rift-local/models/nemotron-streaming-en/
-  moonshine-medium          243MB   (huggingface hub)
-  Total: 841MB
+  nemotron-en               598MB   ~/.cache/rift-local/models/nemotron-en/
+  parakeet-en-v2            595MB   ~/.cache/rift-local/models/parakeet-en-v2/
+  moonshine-en-medium       190MB   (moonshine-voice managed)
+  Total: 1.4GB
 
-rift-local cache --clear nemotron-streaming-en
-  Removed nemotron-streaming-en (598MB freed)
+rift-local cache --clear nemotron-en
+  Removed nemotron-en (598MB freed)
 ```
 
 For HuggingFace models, `rift-local cache --clear` advises using `huggingface-cli cache` instead, since those models may be shared with other tools.
@@ -533,8 +607,9 @@ class ModelEntry:
     files: dict[str, str] = field(default_factory=dict)  # Logical role -> filename
 
 MODELS = {
-    "nemotron-streaming-en": ModelEntry(
-        name="nemotron-streaming-en",
+    # -- sherpa-onnx streaming (OnlineRecognizer) --
+    "nemotron-en": ModelEntry(
+        name="nemotron-en",
         backend="sherpa-onnx",
         source="https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemotron-speech-streaming-en-0.6b-int8-2026-01-14.tar.bz2",
         files={"tokens": "tokens.txt", "encoder": "encoder.int8.onnx", "decoder": "decoder.int8.onnx", "joiner": "joiner.int8.onnx"},
@@ -544,30 +619,93 @@ MODELS = {
         size_mb=600,
         download_mb=447,
     ),
-    "moonshine-medium-en": ModelEntry(
-        name="moonshine-medium-en",
+    "zipformer-en-kroko": ModelEntry(
+        name="zipformer-en-kroko",
+        backend="sherpa-onnx",
+        source="https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06.tar.bz2",
+        files={"tokens": "tokens.txt", "encoder": "encoder.onnx", "decoder": "decoder.onnx", "joiner": "joiner.onnx"},
+        display="Zipformer Kroko EN (streaming)",
+        params="~30M",
+        languages=["en"],
+        size_mb=68,
+        download_mb=55,
+    ),
+
+    # -- sherpa-onnx batch (OfflineRecognizer) --
+    "parakeet-en-v2": ModelEntry(
+        name="parakeet-en-v2",
+        backend="sherpa-onnx",
+        source="https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8.tar.bz2",
+        files={"tokens": "tokens.txt", "encoder": "encoder.int8.onnx", "decoder": "decoder.int8.onnx", "joiner": "joiner.int8.onnx"},
+        display="Parakeet TDT 0.6B v2 EN (int8)",
+        params="0.6B",
+        languages=["en"],
+        streaming=False,
+        size_mb=600,
+        download_mb=447,
+    ),
+    "parakeet-multi-v3": ModelEntry(
+        name="parakeet-multi-v3",
+        backend="sherpa-onnx",
+        source="https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2",
+        files={"tokens": "tokens.txt", "encoder": "encoder.int8.onnx", "decoder": "decoder.int8.onnx", "joiner": "joiner.int8.onnx"},
+        display="Parakeet TDT 0.6B v3 Multilingual (int8)",
+        params="0.6B",
+        languages=["en", "de", "es", "fr", "it", "pt", "nl", "pl", "ro", "sv",
+                    "da", "no", "fi", "hu", "cs", "sk", "uk", "hr", "bg", "sl",
+                    "lt", "lv", "et", "ca", "gl"],
+        streaming=False,
+        size_mb=600,
+        download_mb=447,
+    ),
+
+    # -- Moonshine (streaming, moonshine-voice managed) --
+    "moonshine-en-tiny": ModelEntry(
+        name="moonshine-en-tiny",
         backend="moonshine",
-        source="en",             # Language code; moonshine-voice handles download
+        source="en",
+        display="Moonshine Tiny Streaming EN (34M)",
+        params="34M",
+        languages=["en"],
+        size_mb=26,
+    ),
+    "moonshine-en-small": ModelEntry(
+        name="moonshine-en-small",
+        backend="moonshine",
+        source="en",
+        display="Moonshine Small Streaming EN (123M)",
+        params="123M",
+        languages=["en"],
+        size_mb=95,
+    ),
+    "moonshine-en-medium": ModelEntry(
+        name="moonshine-en-medium",
+        backend="moonshine",
+        source="en",
         display="Moonshine Medium Streaming EN (245M)",
         params="245M",
         languages=["en"],
         size_mb=190,
     ),
-    "mlx-whisper-large-v3-turbo": ModelEntry(   # NOT YET IMPLEMENTED
+
+    # -- mlx-whisper (batch, macOS Apple Silicon only) --
+    "mlx-whisper-large-v3-turbo": ModelEntry(
         name="mlx-whisper-large-v3-turbo",
         backend="mlx-whisper",
-        source="mlx-community/whisper-large-v3-turbo",  # HuggingFace repo ID
+        source="mlx-community/whisper-large-v3-turbo",
         display="Whisper Large V3 Turbo (MLX)",
         params="809M",
         languages=["multilingual"],
         streaming=False,
         size_mb=800,
-        platform="darwin",  # macOS only
+        platform="darwin",
     ),
 }
 ```
 
 The registry ships with the package and is updated with new releases. Users do not edit it.
+
+**Streaming vs batch models:** The `streaming` field indicates whether a model supports true incremental frame-by-frame processing. Both streaming and batch models can serve all endpoints -- the difference is latency characteristics. See [Simulated Streaming](#simulated-streaming) for how batch models handle live audio.
 
 ### Auto-download
 
@@ -586,11 +724,11 @@ Subsequent runs skip download entirely.
 
 ## Backends
 
-Each backend is a Python class implementing a common adapter interface:
+Each backend is a Python class implementing a common adapter interface. There are two adapter protocols -- one for streaming models and one for batch models:
 
 ```python
-class BackendAdapter:
-    """Interface that all rift-local backends implement."""
+class StreamingAdapter:
+    """Interface for streaming (incremental) ASR backends."""
 
     def create_stream(self) -> Stream: ...
     def feed_audio(self, stream: Stream, samples: np.ndarray) -> None: ...
@@ -600,11 +738,21 @@ class BackendAdapter:
     def is_endpoint(self, stream: Stream) -> bool: ...
     def reset(self, stream: Stream) -> None: ...
     def get_info(self) -> dict: ...
+
+class BatchAdapter:
+    """Interface for batch (offline) ASR backends."""
+
+    def transcribe(self, samples: np.ndarray, sample_rate: int = 16000) -> list[Result]: ...
+    def get_info(self) -> dict: ...
 ```
 
-### sherpa-onnx
+Both adapters share the same `get_info()` method and produce the same `Result` format. The server dispatches to the appropriate interface based on the model's `streaming` flag.
 
-Uses `sherpa_onnx.OnlineRecognizer` via pip-installable `sherpa-onnx` Python bindings.
+**Batch models on the WS path:** When a batch model is selected for a WebSocket connection, the server buffers all incoming audio frames until `"Done"` is received, then calls `transcribe()` on the complete audio and sends all results. For live mic audio, this means results arrive after each utterance pause rather than incrementally -- see [Simulated Streaming](#simulated-streaming).
+
+### sherpa-onnx (online/streaming)
+
+Uses `sherpa_onnx.OnlineRecognizer` via pip-installable `sherpa-onnx` Python bindings. Implements `StreamingAdapter`.
 
 The adapter calls the recognizer directly and serializes the full `OnlineRecognizerResult` -- `text`, `tokens`, `timestamps`, `ys_probs`, `lm_probs`, `context_scores`, `start_time`, `segment`, `is_final` -- all fields that the upstream Python WS server discards.
 
@@ -631,7 +779,44 @@ message = {
 
 **Endpoint detection** uses three trailing-silence rules: 2.4s silence (rule 1), 1.2s silence (rule 2), and 20s max utterance length (rule 3). Decoding method is greedy search.
 
+**Models:** `nemotron-en`, `zipformer-en-kroko`
+
 **Install:** `pip install rift-local[sherpa]` (pulls in `sherpa-onnx` and `onnx` for model introspection).
+
+### sherpa-onnx (offline/batch)
+
+Uses `sherpa_onnx.OfflineRecognizer` via the same `sherpa-onnx` Python bindings. Implements `BatchAdapter`.
+
+The offline recognizer processes complete audio in a single pass -- no streaming state, no endpoint detection. It supports the same NeMo transducer model architecture as the online recognizer, but with encoders that see the full utterance at once for higher accuracy.
+
+```python
+recognizer = sherpa_onnx.OfflineRecognizer.from_transducer(
+    encoder=str(model_path / "encoder.int8.onnx"),
+    decoder=str(model_path / "decoder.int8.onnx"),
+    joiner=str(model_path / "joiner.int8.onnx"),
+    tokens=str(model_path / "tokens.txt"),
+    model_type="nemo_transducer",
+    num_threads=2,
+)
+
+stream = recognizer.create_stream()
+stream.accept_waveform(sample_rate, samples)
+recognizer.decode(stream)
+text = stream.result.text
+timestamps = list(stream.result.timestamps)
+tokens = list(stream.result.tokens)
+```
+
+**Key differences from online adapter:**
+- No `is_ready()` / `is_endpoint()` loop -- single `decode()` call on complete audio
+- `model_type="nemo_transducer"` required for Parakeet TDT models
+- No endpoint detection (`features.endpoint_detection: false`)
+- Reports `streaming: false` in info handshake
+- Typically higher accuracy than streaming counterpart on same audio
+
+**Models:** `parakeet-en-v2`, `parakeet-multi-v3`
+
+**Install:** Same as streaming -- `pip install rift-local[sherpa]`.
 
 ### Moonshine
 
@@ -729,7 +914,7 @@ Models auto-download from HuggingFace on first use via `mlx_whisper`'s built-in 
 | ---------------- | ------------------------------- | --------------------------------------------------------------------------------------- |
 | `qwen3-asr`      | vLLM with OpenAI-compatible API | Adapter translates between vLLM's streaming HTTP/SSE and rift-local's WS protocol       |
 | `qwen3-asr-mlx`  | mlx-lm with Qwen3-ASR weights   | MLX-converted Qwen3-ASR models (0.6B, 1.7B) available on mlx-community HF org           |
-| `parakeet-mlx`   | Custom MLX inference            | NVIDIA Parakeet CTC/TDT models converted to MLX (high accuracy, potentially streamable) |
+| `parakeet-mlx`   | Custom MLX inference            | NVIDIA Parakeet CTC/TDT models converted to MLX (potentially streamable)                |
 | `nemotron-cpp`   | nemotron-asr.cpp subprocess     | Pure C++/ggml, no Python deps; adapter communicates via stdin/stdout pipe               |
 | `faster-whisper` | faster-whisper library          | Offline (not streaming), but useful for high-accuracy batch re-transcription            |
 
@@ -795,26 +980,29 @@ All models auto-download from HuggingFace on first use.
 
 ## Batch Transcription
 
-Batch transcription uses the same core pipeline as streaming. The difference is how audio arrives and how results are delivered.
+Batch transcription can use either a streaming model (audio fed through incremental pipeline) or a batch model (full audio processed at once). When multiple models are loaded, RIFT can use a high-accuracy batch model for re-transcription while keeping a streaming model active for live mic.
 
 ### From RIFT (WebSocket)
 
-When RIFT re-transcribes a segment or full recording, the audio is already in the browser's memory as Float32 PCM. RIFT sends it over the existing WebSocket connection at read speed (faster than real-time). The server processes frames identically to live streaming -- same code path, same result format. The only difference is timing: frames arrive faster.
+When RIFT re-transcribes a segment or full recording, the audio is already in the browser's memory as Float32 PCM. RIFT opens a new WebSocket connection with `?asr=parakeet-en-v2` (or whichever model is desired) and sends audio at read speed (faster than real-time).
+
+- **With a streaming model:** frames are processed incrementally, same as live. Results stream back as they're recognized.
+- **With a batch model:** frames are buffered until `"Done"`, then processed in a single pass. Results arrive all at once after processing completes.
 
 This is the preferred path for RIFT because:
 
-- The WS connection is already open from the live session
 - Audio is already in Float32 PCM (no encoding/decoding needed)
-- Results stream back incrementally (RIFT can show progress)
+- Results stream back incrementally when using a streaming model
 - No file I/O or multipart encoding overhead
+- Model selection via query parameter
 
 ### From external tools (HTTP)
 
-External callers (scripts, CLI, CI pipelines, `curl`) use `POST /transcribe` with an audio file. The HTTP handler:
+External callers (scripts, CLI, CI pipelines, `curl`) use `POST /transcribe` with an audio file and optional `asr` parameter. The HTTP handler:
 
-1. Receives the uploaded file
+1. Receives the uploaded file and selects the requested model (or default)
 2. Decodes it to Float32 PCM (using `soundfile` or `ffmpeg` -- supports wav, mp3, m4a, ogg, flac)
-3. Feeds it through the same pipeline as the WS handler
+3. Routes to the appropriate adapter (streaming pipeline or batch `transcribe()`)
 4. Collects all results
 5. Returns a single JSON response
 
@@ -822,7 +1010,36 @@ This path adds audio decoding (which the WS path doesn't need) but provides the 
 
 ### From CLI (direct)
 
-`rift-local transcribe file.wav` skips the server entirely. It loads the model, decodes the file, runs the pipeline, and prints results. Same pipeline, no network hop.
+`rift-local transcribe file.wav --asr parakeet-en-v2` skips the server entirely. It loads the specified model, decodes the file, runs the pipeline, and prints results. Any model (streaming or batch) can be used.
+
+---
+
+## Simulated Streaming
+
+Batch-only models (sherpa-onnx offline, mlx-whisper) can serve live WebSocket audio through **VAD-based simulated streaming**. This provides batch-quality accuracy with a streaming-like UX, at the cost of higher latency.
+
+### How it works
+
+1. Audio frames arrive over WebSocket as usual (Float32 PCM)
+2. A Voice Activity Detector (Silero VAD, bundled with sherpa-onnx) monitors the audio stream
+3. When VAD detects end of speech (silence after voice), the accumulated speech segment is sent to the batch model's `transcribe()` method
+4. Results are sent back to the client as `is_final: true` segments
+5. During speech (before VAD triggers), no interim results are sent
+
+### UX implications
+
+| Aspect | True streaming | Simulated streaming |
+|---|---|---|
+| Interim results (partial words) | Yes, word-by-word | No -- silence until utterance complete |
+| Latency to first result | ~100-300ms | ~1-3s (depends on utterance length + VAD delay) |
+| Accuracy | Good | Better (full-context encoder) |
+| `info.streaming` | `true` | `false` |
+
+RIFT should adapt its UI when `streaming: false` -- for example, showing a "processing..." indicator during speech instead of live partial text. The client already handles `is_final: true` segments, so the result format is identical.
+
+### Implementation note
+
+Simulated streaming is a **server-side concern** -- the client protocol is unchanged. The server decides whether to use the incremental pipeline or the VAD+batch pipeline based on the selected model's adapter type. This is a Phase 2+ feature; initial batch model support will only serve HTTP `/transcribe` and CLI, with WS support for batch models added later.
 
 ---
 
@@ -874,26 +1091,30 @@ rift-local transcribe meeting.wav | rift-local transform \
 ### Phase 1: Streaming ASR bridge (validates protocol) -- COMPLETE
 
 - [x] FastAPI server with WS endpoint (+ root `/` alias)
-- [x] sherpa-onnx backend adapter with full field serialization
+- [x] sherpa-onnx online (streaming) backend adapter with full field serialization
 - [x] `info` handshake with model metadata (including dynamic `features.confidence`)
-- [x] Model registry with 3 sherpa models (Nemotron, Zipformer small, Zipformer bilingual)
+- [x] Model registry with 5 models (Nemotron, Zipformer, 3 Moonshine)
 - [x] Auto-download for sherpa GitHub release tarballs
 - [x] `serve`, `list` CLI commands
 - [x] HTTP `GET /info` endpoint (pulled forward from Phase 2)
 - [x] Tests: mock backend unit tests + real sherpa-onnx integration tests
 - [x] NeMo transducer detection for honest confidence reporting
+- [x] Moonshine backend adapter (pull wrapper around moonshine-voice push API; 3 streaming models)
+- [x] PyPI publication infrastructure (build script, TestPyPI verified)
 - [ ] **Validates against:** existing RIFT `sherpa.svelte.ts` client (minor update to handle `type` field and display `model`) -- needs testing
 
-### Phase 2: Batch + Moonshine + MLX Whisper + model metadata in RIFT UI
+### Phase 2: Multi-model + Batch + MLX Whisper
 
-- [ ] HTTP `POST /transcribe` endpoint (file upload with audio decoding)
-- [x] ~~HTTP `GET /info` endpoint~~ (done in Phase 1)
-- [ ] `rift-local transcribe` CLI command
-- [x] Moonshine backend adapter (pull wrapper around moonshine-voice push API; 3 streaming models: tiny/small/medium)
+- [ ] Multi-model loading: repeatable `--asr` flag, model registry in server
+- [ ] Per-request model selection: `?asr=` on WS, `asr=` on HTTP, `--asr` on CLI
+- [ ] Multi-model `GET /info` endpoint (reports all loaded models, default model, LLM)
+- [ ] sherpa-onnx offline (batch) backend adapter (`OfflineRecognizer`, `BatchAdapter` protocol)
+- [ ] Batch model registry entries: `parakeet-en-v2`, `parakeet-multi-v3`
+- [ ] HTTP `POST /transcribe` endpoint (file upload with audio decoding, model selection)
+- [ ] `rift-local transcribe` CLI command (any model, streaming or batch)
 - [ ] mlx-whisper backend adapter (macOS Apple Silicon, batch only)
-- [x] ~~HuggingFace Hub integration for model downloads~~ (Moonshine uses its own `get_model_for_language()` download manager; MLX models still need HuggingFace Hub)
 - [ ] Platform detection: show/hide MLX models based on system capabilities
-- [ ] RIFT client displays model name from `info` handshake
+- [ ] RIFT client displays model name from `info` handshake + model picker
 - [ ] `info`, `cache` CLI commands
 - [ ] `pip install rift-local[mlx]` optional extra
 
@@ -909,6 +1130,7 @@ rift-local transcribe meeting.wav | rift-local transform \
 
 ### Phase 4: Polish
 
+- [ ] VAD-based simulated streaming for batch models on WS (Silero VAD)
 - [ ] `--device` flag (CUDA, CoreML, MLX auto-detection)
 - [ ] SRT/VTT output format for `transcribe`
 - [ ] Error messages for missing optional dependencies ("Install MLX support: `pip install rift-local[mlx]`")
@@ -922,8 +1144,9 @@ rift-local transcribe meeting.wav | rift-local transform \
 - **Cloud provider auth/CORS.** Cloud providers (Deepgram, Soniox, ElevenLabs, etc.) are handled by RIFT's SvelteKit API routes or browser-direct connections. rift-local is for local models only.
 - **Audio processing.** No resampling, VAD, noise reduction, or transcoding for the WS path. RIFT's AudioWorklet sends ready-to-use 16kHz Float32 PCM. (The HTTP path does decode audio files, but does not apply VAD or noise reduction.)
 - **Script-based transforms.** Deterministic text operations (regex, case conversion, word lists) run in RIFT's browser UI as JS/TS functions. rift-local handles LLM transforms only.
-- **Multi-user serving.** Single audio stream, single model, single user. Not a production ASR API server.
-- **GPU management.** Does not auto-select GPU, manage VRAM, or swap models on demand. One model loaded at startup, use `--device` to pick compute target. (MLX backends use Apple Silicon unified memory automatically -- no device selection needed.)
+- **Multi-user serving.** Single audio stream per model, single user. Not a production ASR API server.
+- **GPU management.** Does not auto-select GPU or manage VRAM. Models loaded at startup via `--asr`/`--llm` flags; use `--device` to pick compute target. (MLX backends use Apple Silicon unified memory automatically -- no device selection needed.)
+- **Dynamic model loading/unloading.** All models are loaded at startup. To change which models are loaded, restart the server. Hot-swapping models at runtime is not supported.
 
 ---
 
