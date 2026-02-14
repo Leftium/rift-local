@@ -44,6 +44,13 @@ rift-local = "rift_local.cli:main"
 sherpa = ["sherpa-onnx>=1.11"]
 moonshine = []
 mlx = []
+dev = [
+    "pytest>=8.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["slow: requires downloaded models (use --slow to run)"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/rift_local"]

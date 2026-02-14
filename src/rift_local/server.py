@@ -28,6 +28,7 @@ def create_app(backend: BackendAdapter) -> FastAPI:
     # -- WebSocket endpoint -------------------------------------------------
 
     @app.websocket("/ws")
+    @app.websocket("/")
     async def ws_endpoint(ws: WebSocket) -> None:
         await ws.accept()
 
