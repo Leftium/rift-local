@@ -1,0 +1,42 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "rift-local"
+version = "0.1.0.dev0"
+description = "Local inference server for RIFT Transcription — streaming and batch speech recognition, LLM transforms, and CLI transcription backed by local models."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [{ name = "Leftium" }]
+keywords = ["speech-recognition", "transcription", "asr", "whisper", "local-inference"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+]
+
+[project.urls]
+Homepage = "https://github.com/Leftium/rift-local"
+Repository = "https://github.com/Leftium/rift-local"
+Issues = "https://github.com/Leftium/rift-local/issues"
+
+[project.scripts]
+rift-local = "rift_local.cli:main"
+
+[project.optional-dependencies]
+sherpa = []
+moonshine = []
+mlx = []
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/rift_local"]
