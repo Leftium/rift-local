@@ -16,6 +16,26 @@ except ImportError:
     sherpa_onnx = None  # type: ignore[assignment]
 
 
+def _is_nemo_decoder(decoder_path: str) -> bool:
+    """Return True if *decoder_path* is a NeMo-style transducer decoder.
+
+    sherpa-onnx routes NeMo transducer models (Parakeet TDT, Nemotron, …)
+    through ``OnlineRecognizerTransducerNeMoImpl`` when the decoder ONNX
+    has more than one output node.  That NeMo greedy-search decoder does
+    **not** populate ``ys_probs`` (per-token log-probs), so we cannot
+    report confidence data for these models.
+
+    See: https://github.com/k2-fsa/sherpa-onnx/issues/3181
+    """
+    try:
+        import onnx
+
+        model = onnx.load(decoder_path)
+        return len(model.graph.output) > 1
+    except Exception:  # noqa: BLE001 – onnx not installed or load failed
+        return False  # Assume standard decoder (optimistic)
+
+
 class SherpaAdapter:
     """Wraps ``sherpa_onnx.OnlineRecognizer`` behind the BackendAdapter protocol."""
 
@@ -55,6 +75,13 @@ class SherpaAdapter:
             rule3_min_utterance_length=20.0,
             decoding_method="greedy_search",
         )
+
+        # NeMo transducer models (Nemotron, Parakeet TDT, …) use a separate
+        # greedy-search decoder in sherpa-onnx that does not yet compute
+        # per-token log-probs (ys_probs).  Detect this at init so we can
+        # report features.confidence accurately in the info handshake.
+        # Upstream issue: https://github.com/k2-fsa/sherpa-onnx/issues/3181
+        self._has_confidence = not _is_nemo_decoder(decoder)
 
     # -- BackendAdapter protocol ----------------------------------------
 
@@ -104,7 +131,7 @@ class SherpaAdapter:
             languages=list(self._entry.languages),
             features=Features(
                 timestamps=True,
-                confidence=True,
+                confidence=self._has_confidence,
                 endpoint_detection=True,
                 diarization=False,
             ),

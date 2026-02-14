@@ -41,7 +41,7 @@ Issues = "https://github.com/Leftium/rift-local/issues"
 rift-local = "rift_local.cli:main"
 
 [project.optional-dependencies]
-sherpa = ["sherpa-onnx>=1.11"]
+sherpa = ["sherpa-onnx>=1.11", "onnx>=1.16"]
 moonshine = []
 mlx = []
 dev = [
