@@ -47,8 +47,8 @@ class ModelEntry:
 
 # fmt: off
 _MODELS: dict[str, ModelEntry] = {
-    "nemotron-streaming-en": ModelEntry(
-        name="nemotron-streaming-en",
+    "nemotron-en": ModelEntry(
+        name="nemotron-en",
         backend="sherpa-onnx",
         source=(
             "https://github.com/k2-fsa/sherpa-onnx/releases/download/"
@@ -67,8 +67,8 @@ _MODELS: dict[str, ModelEntry] = {
         size_mb=600,
         download_mb=447,
     ),
-    "zipformer-kroko-en": ModelEntry(
-        name="zipformer-kroko-en",
+    "zipformer-en-kroko": ModelEntry(
+        name="zipformer-en-kroko",
         backend="sherpa-onnx",
         source=(
             "https://github.com/k2-fsa/sherpa-onnx/releases/download/"
@@ -90,8 +90,8 @@ _MODELS: dict[str, ModelEntry] = {
     # -- Moonshine (moonshine-voice) ------------------------------------
     # Moonshine manages its own model cache via get_model_for_language().
     # source is the language code; files is empty (no manual download).
-    "moonshine-tiny-en": ModelEntry(
-        name="moonshine-tiny-en",
+    "moonshine-en-tiny": ModelEntry(
+        name="moonshine-en-tiny",
         backend="moonshine",
         source="en",
         display="Moonshine Tiny Streaming EN (34M)",
@@ -99,8 +99,8 @@ _MODELS: dict[str, ModelEntry] = {
         languages=["en"],
         size_mb=26,
     ),
-    "moonshine-small-en": ModelEntry(
-        name="moonshine-small-en",
+    "moonshine-en-small": ModelEntry(
+        name="moonshine-en-small",
         backend="moonshine",
         source="en",
         display="Moonshine Small Streaming EN (123M)",
@@ -108,8 +108,8 @@ _MODELS: dict[str, ModelEntry] = {
         languages=["en"],
         size_mb=95,
     ),
-    "moonshine-medium-en": ModelEntry(
-        name="moonshine-medium-en",
+    "moonshine-en-medium": ModelEntry(
+        name="moonshine-en-medium",
         backend="moonshine",
         source="en",
         display="Moonshine Medium Streaming EN (245M)",

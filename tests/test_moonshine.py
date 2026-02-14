@@ -133,7 +133,7 @@ def moonshine_adapter():
     from rift_local.models.registry import ModelEntry
 
     entry = ModelEntry(
-        name="moonshine-medium-en",
+        name="moonshine-en-medium",
         backend="moonshine",
         source="en",
         display="Moonshine Medium Streaming EN (245M)",
@@ -316,7 +316,7 @@ class TestMoonshineServerIntegration:
 # Slow integration tests (require moonshine-voice installed + model cached)
 # ---------------------------------------------------------------------------
 
-_SLOW_MODEL = "moonshine-medium-en"
+_SLOW_MODEL = "moonshine-en-medium"
 
 
 def _can_run_moonshine() -> tuple[bool, str]:

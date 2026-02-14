@@ -15,7 +15,7 @@ from rift_local import __version__
 DEFAULT_PORT = 2177
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_SAMPLE_RATE = 16_000
-DEFAULT_MODEL = "moonshine-medium-en"
+DEFAULT_MODEL = "moonshine-en-medium"
 
 # ---------------------------------------------------------------------------
 # Info message (WS handshake + GET /info)

@@ -43,8 +43,8 @@ rift-local list --installed
 
 | Model | Params | Languages | Download | Notes |
 |-------|--------|-----------|----------|-------|
-| `nemotron-streaming-en` | 0.6B | EN | 447 MB | Best accuracy. |
-| `zipformer-kroko-en` | ~30M | EN | 55 MB | Lightweight, fast. Only ~68 MB on disk. |
+| `nemotron-en` | 0.6B | EN | 447 MB | Best accuracy. |
+| `zipformer-en-kroko` | ~30M | EN | 55 MB | Lightweight, fast. Only ~68 MB on disk. |
 
 Requires: `pip install rift-local[sherpa]`
 
@@ -52,9 +52,9 @@ Requires: `pip install rift-local[sherpa]`
 
 | Model | Params | Languages | Size | Notes |
 |-------|--------|-----------|------|-------|
-| `moonshine-tiny-en` | 34M | EN | 26 MB | Fastest. Good for low-resource. |
-| `moonshine-small-en` | 123M | EN | 95 MB | Balanced speed/accuracy. |
-| `moonshine-medium-en` | 245M | EN | 190 MB | **Default.** Best Moonshine accuracy. |
+| `moonshine-en-tiny` | 34M | EN | 26 MB | Fastest. Good for low-resource. |
+| `moonshine-en-small` | 123M | EN | 95 MB | Balanced speed/accuracy. |
+| `moonshine-en-medium` | 245M | EN | 190 MB | **Default.** Best Moonshine accuracy. |
 
 Requires: `pip install rift-local[moonshine]`
 
@@ -71,10 +71,10 @@ Start the WebSocket server with any model:
 rift-local serve
 
 # sherpa-onnx
-rift-local serve --model nemotron-streaming-en
+rift-local serve --model nemotron-en
 
 # Custom host/port
-rift-local serve --model moonshine-tiny-en --host 0.0.0.0 --port 8080
+rift-local serve --model moonshine-en-tiny --host 0.0.0.0 --port 8080
 ```
 
 The server auto-downloads the model on first run, then listens on:
@@ -85,7 +85,7 @@ The server auto-downloads the model on first run, then listens on:
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--model` | `moonshine-medium-en` | Model name from registry |
+| `--model` | `moonshine-en-medium` | Model name from registry |
 | `--host` | `127.0.0.1` | Bind address |
 | `--port` | `2177` | Server port |
 | `--threads` | `2` | Inference threads |
