@@ -42,7 +42,7 @@ rift-local = "rift_local.cli:main"
 
 [project.optional-dependencies]
 sherpa = ["sherpa-onnx>=1.11", "onnx>=1.16"]
-moonshine = []
+moonshine = ["moonshine-voice>=0.0.48"]
 mlx = []
 dev = [
     "pytest>=8.0",

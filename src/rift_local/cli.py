@@ -76,19 +76,11 @@ def _cmd_serve(args: argparse.Namespace) -> None:
     """Start the rift-local server."""
     import uvicorn
 
-    from rift_local.backends.sherpa import SherpaAdapter
-    from rift_local.models import ensure_model, get_model
+    from rift_local.models import get_model
     from rift_local.server import create_app
 
     entry = get_model(args.model)
-    model_dir = ensure_model(args.model)
-
-    backend = SherpaAdapter(
-        entry,
-        model_dir,
-        num_threads=args.threads,
-        sample_rate=16_000,
-    )
+    backend = _create_backend(entry, threads=args.threads)
 
     app = create_app(backend)
     info = backend.get_info()
@@ -101,6 +93,38 @@ def _cmd_serve(args: argparse.Namespace) -> None:
     print()
 
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+
+
+def _create_backend(entry, *, threads: int = 2):
+    """Instantiate the appropriate backend adapter for *entry*."""
+    if entry.backend == "sherpa-onnx":
+        from rift_local.backends.sherpa import SherpaAdapter
+        from rift_local.models import ensure_model
+
+        model_dir = ensure_model(entry.name)
+        return SherpaAdapter(
+            entry,
+            model_dir,
+            num_threads=threads,
+            sample_rate=16_000,
+        )
+
+    if entry.backend == "moonshine":
+        from rift_local.backends.moonshine import (
+            MoonshineAdapter,
+            ensure_moonshine_model,
+        )
+
+        model_path, model_arch = ensure_moonshine_model(entry)
+        return MoonshineAdapter(
+            entry,
+            model_path=model_path,
+            model_arch=model_arch,
+            sample_rate=16_000,
+        )
+
+    msg = f"Unknown backend {entry.backend!r} for model {entry.name!r}"
+    raise ValueError(msg)
 
 
 def _cmd_list(args: argparse.Namespace) -> None:

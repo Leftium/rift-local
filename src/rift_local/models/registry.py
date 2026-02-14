@@ -107,6 +107,36 @@ _MODELS: dict[str, ModelEntry] = {
         size_mb=370,
         download_mb=487,
     ),
+    # -- Moonshine (moonshine-voice) ------------------------------------
+    # Moonshine manages its own model cache via get_model_for_language().
+    # source is the language code; files is empty (no manual download).
+    "moonshine-tiny-en": ModelEntry(
+        name="moonshine-tiny-en",
+        backend="moonshine",
+        source="en",
+        display="Moonshine Tiny Streaming EN (34M)",
+        params="34M",
+        languages=["en"],
+        size_mb=26,
+    ),
+    "moonshine-small-en": ModelEntry(
+        name="moonshine-small-en",
+        backend="moonshine",
+        source="en",
+        display="Moonshine Small Streaming EN (123M)",
+        params="123M",
+        languages=["en"],
+        size_mb=95,
+    ),
+    "moonshine-medium-en": ModelEntry(
+        name="moonshine-medium-en",
+        backend="moonshine",
+        source="en",
+        display="Moonshine Medium Streaming EN (245M)",
+        params="245M",
+        languages=["en"],
+        size_mb=190,
+    ),
 }
 # fmt: on
 

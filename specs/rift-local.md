@@ -544,14 +544,14 @@ MODELS = {
         size_mb=600,
         download_mb=447,
     ),
-    "moonshine-medium": ModelEntry(   # NOT YET IMPLEMENTED
-        name="moonshine-medium",
+    "moonshine-medium-en": ModelEntry(
+        name="moonshine-medium-en",
         backend="moonshine",
-        source="usefulsensors/moonshine-medium",  # HuggingFace repo ID
-        display="Moonshine Medium (245M)",
+        source="en",             # Language code; moonshine-voice handles download
+        display="Moonshine Medium Streaming EN (245M)",
         params="245M",
         languages=["en"],
-        size_mb=245,
+        size_mb=190,
     ),
     "mlx-whisper-large-v3-turbo": ModelEntry(   # NOT YET IMPLEMENTED
         name="mlx-whisper-large-v3-turbo",
@@ -635,15 +635,32 @@ message = {
 
 ### Moonshine
 
-Uses `moonshine` Python package. Moonshine's `MicTranscriber` emits `LineStarted`, `LineTextChanged`, and `LineCompleted` events. The adapter maps these to the rift-local protocol:
+Uses `moonshine-voice` Python package (`pip install moonshine-voice>=0.0.48`). Moonshine's native API is push/event-driven (`LineStarted`, `LineTextChanged`, `LineCompleted`), but the adapter wraps it behind the same pull-based `BackendAdapter` protocol used by sherpa-onnx. This follows the design principle from transcription-rs: **pull is the better internal abstraction** — you can build push on top of pull, but not the reverse.
 
-| Moonshine event   | rift-local mapping                                                        |
-| ----------------- | ------------------------------------------------------------------------- |
-| `LineStarted`     | New `segment` ID                                                          |
-| `LineTextChanged` | `is_final: false` (interim -- note: Moonshine interims are non-monotonic) |
-| `LineCompleted`   | `is_final: true` (endpoint)                                               |
+**Pull adapter strategy:**
+- `feed_audio()` calls `stream.add_audio()` with a very large `update_interval` (999999s) to suppress Moonshine's auto-update.
+- `decode()` explicitly calls `stream.update_transcription()` to pull the current transcript state.
+- `get_result()` reads the latest `TranscriptLine.text` from the transcript.
+- `is_endpoint()` detects when the tracked active line's `is_complete` flag flips to True.
+- `is_ready()` returns True exactly once per `feed_audio()` call, then False after `decode()`, so the server's `while is_ready: decode()` loop runs one pass per audio chunk.
 
-Moonshine does not provide per-token timestamps or log-probs. Those fields will be absent from results. The `info` handshake will report `features.timestamps: false` and `features.confidence: false` so RIFT can adapt its UI (e.g. disable per-word confidence coloring).
+**Model download:** Moonshine manages its own model cache via `get_model_for_language()`. The adapter calls this at init, passing the language code and `ModelArch` enum (e.g. `MEDIUM_STREAMING`). No tarball extraction needed — the library handles download and caching internally.
+
+| Moonshine transcript state | rift-local mapping                                                        |
+| -------------------------- | ------------------------------------------------------------------------- |
+| New line (not complete)    | Interim: `is_final: false` (note: Moonshine interims are non-monotonic)   |
+| Line `is_complete`         | Endpoint: `is_final: true`                                                |
+| Next line after endpoint   | New `segment` ID (auto-incremented by server)                             |
+
+Moonshine does not provide per-token timestamps or log-probs. Those fields will be absent from results. The `info` handshake reports `features.timestamps: false` and `features.confidence: false` so RIFT can adapt its UI (e.g. disable per-word confidence coloring).
+
+**Available streaming models (Gen 2):**
+
+| Registry name        | ModelArch          | Params | WER (OpenASR) | Latency (MacBook Pro) |
+| -------------------- | ------------------ | ------ | ------------- | --------------------- |
+| `moonshine-tiny-en`  | `TINY_STREAMING`   | 34M    | 12.00%        | ~50ms                 |
+| `moonshine-small-en` | `SMALL_STREAMING`  | 123M   | 7.84%         | ~148ms                |
+| `moonshine-medium-en`| `MEDIUM_STREAMING`  | 245M   | 6.65%         | ~258ms                |
 
 **Install:** `pip install rift-local[moonshine]`
 
@@ -872,9 +889,9 @@ rift-local transcribe meeting.wav | rift-local transform \
 - [ ] HTTP `POST /transcribe` endpoint (file upload with audio decoding)
 - [x] ~~HTTP `GET /info` endpoint~~ (done in Phase 1)
 - [ ] `rift-local transcribe` CLI command
-- [ ] Moonshine backend adapter
+- [x] Moonshine backend adapter (pull wrapper around moonshine-voice push API; 3 streaming models: tiny/small/medium)
 - [ ] mlx-whisper backend adapter (macOS Apple Silicon, batch only)
-- [ ] HuggingFace Hub integration for model downloads (shared by Moonshine and MLX models)
+- [x] ~~HuggingFace Hub integration for model downloads~~ (Moonshine uses its own `get_model_for_language()` download manager; MLX models still need HuggingFace Hub)
 - [ ] Platform detection: show/hide MLX models based on system capabilities
 - [ ] RIFT client displays model name from `info` handshake
 - [ ] `info`, `cache` CLI commands
