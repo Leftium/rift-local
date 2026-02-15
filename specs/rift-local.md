@@ -373,8 +373,13 @@ Options:
   --device DEVICE     Compute device: cpu, cuda, coreml, mlx      [default: auto]
   --threads N         Number of inference threads                  [default: 2]
   --llm MODEL         LLM for /transform endpoint (optional)      [default: none]
-                      Prefix selects backend: mlx:, ollama:, openai:
-                      Examples: mlx:llama-3.2-3b, ollama:llama3.2:3b
+                       Prefix selects backend: mlx:, ollama:, openai:
+                       Examples: mlx:llama-3.2-3b, ollama:llama3.2:3b
+  --open [TARGET]     Open browser to RIFT Transcription client    [default: off]
+                       No argument: https://rift-transcription.vercel.app
+                       "dev": http://localhost:5173
+                       "dev:PORT": http://localhost:PORT
+                       URL: opened as-is
 ```
 
 Examples:
@@ -398,6 +403,18 @@ rift-local serve --asr moonshine-en-tiny --asr nemotron-en
 
 # LLM-only mode (no ASR -- transcription via Web Speech API or cloud)
 rift-local serve --llm mlx:llama-3.2-3b
+
+# Open the hosted RIFT Transcription client in your browser
+rift-local serve --open
+
+# Open local dev server (http://localhost:5173)
+rift-local serve --open dev
+
+# Open local dev server on custom port
+rift-local serve --open dev:3000
+
+# Open a custom URL
+rift-local serve --open https://my-custom-client.example.com
 ```
 
 On first run with a given model, rift-local downloads the model files automatically with a progress bar, then starts serving.

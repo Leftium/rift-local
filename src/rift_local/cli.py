@@ -46,6 +46,18 @@ def main() -> None:
         default=2,
         help="Number of inference threads  [default: 2]",
     )
+    serve_parser.add_argument(
+        "--open",
+        nargs="?",
+        const="hosted",
+        default=None,
+        metavar="TARGET",
+        help=(
+            "Open browser to RIFT Transcription client. "
+            'No argument: hosted app. "dev": localhost:5173. '
+            '"dev:PORT": localhost:PORT. URL: opened as-is.'
+        ),
+    )
 
     # -- list ---------------------------------------------------------------
     list_parser = sub.add_parser("list", help="Show available models.")
@@ -65,6 +77,51 @@ def main() -> None:
     else:
         parser.print_help()
         sys.exit(0)
+
+
+# ---------------------------------------------------------------------------
+# Browser helpers
+# ---------------------------------------------------------------------------
+
+_HOSTED_URL = "https://rift-transcription.vercel.app"
+_DEV_URL = "http://localhost:5173"
+
+
+def _resolve_open_target(target: str) -> str:
+    """Resolve an ``--open`` target value to a full URL.
+
+    - ``"hosted"`` (the ``const`` when no argument given) -> hosted app URL
+    - ``"dev"`` -> localhost:5173
+    - ``"dev:PORT"`` -> localhost:PORT
+    - anything else -> treated as a URL, used as-is
+    """
+    if target == "hosted":
+        return _HOSTED_URL
+    if target == "dev":
+        return _DEV_URL
+    if target.startswith("dev:"):
+        port = target.split(":", 1)[1]
+        return f"http://localhost:{port}"
+    return target
+
+
+def _open_browser_delayed(url: str, delay: float = 1.0) -> None:
+    """Open *url* in the default browser after *delay* seconds.
+
+    Runs in a daemon thread so it doesn't block server startup and is
+    silently discarded if the process exits first.
+    """
+    import threading
+    import webbrowser
+
+    def _open() -> None:
+        import time
+
+        time.sleep(delay)
+        webbrowser.open(url)
+
+    t = threading.Thread(target=_open, daemon=True)
+    t.start()
 
 
 # ---------------------------------------------------------------------------
@@ -90,6 +147,12 @@ def _cmd_serve(args: argparse.Namespace) -> None:
     print(f"Backend: {info.backend}")
     print(f"Server:  http://{args.host}:{args.port}")
     print(f"WS:      ws://{args.host}:{args.port}/ws")
+
+    if args.open is not None:
+        url = _resolve_open_target(args.open)
+        print(f"Browser: {url}")
+        _open_browser_delayed(url)
+
     print()
 
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
