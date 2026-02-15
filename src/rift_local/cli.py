@@ -49,14 +49,13 @@ def main() -> None:
     serve_parser.add_argument(
         "--open",
         nargs="?",
-        const="bundled",
+        const="hosted",
         default=None,
         metavar="TARGET",
         help=(
             "Open browser to RIFT Transcription client. "
-            'No argument: bundled client. "hosted": Vercel app. '
-            '"dev": localhost:5173. "dev:PORT": localhost:PORT. '
-            "URL: opened as-is."
+            'No argument: hosted app. "dev": localhost:5173. '
+            '"dev:PORT": localhost:PORT. URL: opened as-is.'
         ),
     )
 
@@ -86,27 +85,31 @@ def main() -> None:
 
 _HOSTED_URL = "https://rift-transcription.vercel.app"
 _DEV_URL = "http://localhost:5173"
-_LAUNCH_PARAMS = "?source=local&autoconnect=true&autolisten=true"
+_DEFAULT_WS_PORT = 2177
 
 
 def _resolve_open_target(target: str, *, server_port: int) -> str:
     """Resolve an ``--open`` target value to a full URL.
 
-    - ``"bundled"`` (the ``const`` when no argument given) -> bundled client
-    - ``"hosted"`` -> Vercel deployment
+    - ``"hosted"`` (the ``const`` when no argument given) -> Vercel app
     - ``"dev"`` -> localhost:5173
     - ``"dev:PORT"`` -> localhost:PORT
     - anything else -> treated as a URL, used as-is (no params appended)
+
+    Appends ``?source=local`` to resolved URLs, plus ``&url=ws://localhost:{port}``
+    when the server port is non-default.
     """
-    if target == "bundled":
-        return f"http://localhost:{server_port}/{_LAUNCH_PARAMS}"
+    params = "?source=local"
+    if server_port != _DEFAULT_WS_PORT:
+        params += f"&url=ws://localhost:{server_port}"
+
     if target == "hosted":
-        return f"{_HOSTED_URL}/{_LAUNCH_PARAMS}"
+        return f"{_HOSTED_URL}/{params}"
     if target == "dev":
-        return f"{_DEV_URL}/{_LAUNCH_PARAMS}"
+        return f"{_DEV_URL}/{params}"
     if target.startswith("dev:"):
         port = target.split(":", 1)[1]
-        return f"http://localhost:{port}/{_LAUNCH_PARAMS}"
+        return f"http://localhost:{port}/{params}"
     return target
 
 
