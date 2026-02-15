@@ -376,7 +376,8 @@ Options:
                        Prefix selects backend: mlx:, ollama:, openai:
                        Examples: mlx:llama-3.2-3b, ollama:llama3.2:3b
   --open [TARGET]     Open browser to RIFT Transcription client    [default: off]
-                       No argument: https://rift-transcription.vercel.app
+                       No argument: bundled client at http://localhost:PORT
+                       "hosted": https://rift-transcription.vercel.app
                        "dev": http://localhost:5173
                        "dev:PORT": http://localhost:PORT
                        URL: opened as-is
@@ -404,10 +405,13 @@ rift-local serve --asr moonshine-en-tiny --asr nemotron-en
 # LLM-only mode (no ASR -- transcription via Web Speech API or cloud)
 rift-local serve --llm mlx:llama-3.2-3b
 
-# Open the hosted RIFT Transcription client in your browser
+# Start server and open bundled RIFT Transcription client
 rift-local serve --open
 
-# Open local dev server (http://localhost:5173)
+# Open the hosted (Vercel) client instead of bundled
+rift-local serve --open hosted
+
+# Open local SvelteKit dev server (http://localhost:5173)
 rift-local serve --open dev
 
 # Open local dev server on custom port
@@ -418,6 +422,36 @@ rift-local serve --open https://my-custom-client.example.com
 ```
 
 On first run with a given model, rift-local downloads the model files automatically with a progress bar, then starts serving.
+
+#### Bundled Client
+
+rift-local ships with a pre-built copy of the RIFT Transcription SPA in `src/rift_local/client/`. The server mounts these static files at `/` (below API routes, so `/ws`, `/info`, `/transcribe` take priority). This enables fully offline operation after initial model download.
+
+When `--open` is used without a target, the server opens the bundled client with query parameters that pre-configure it for local use:
+
+```
+http://localhost:2177/?source=local&autoconnect=true&autolisten=true
+```
+
+| Parameter      | Value    | Effect                                                        |
+|----------------|----------|---------------------------------------------------------------|
+| `source`       | `local`  | Preselect the "Local" ASR source (skip source picker)         |
+| `autoconnect`  | `true`   | Connect WebSocket to rift-local immediately on page load      |
+| `autolisten`   | `true`   | Prompt user to enable mic with a single click                 |
+
+**Mic permission note:** Browsers require a user gesture (click/tap) before granting microphone access. The `autolisten` parameter cannot bypass this — instead, the SPA should display a prominent "Click to start listening" UI so the user needs exactly one click to go live. Once granted, Chrome persists the permission for the origin (`localhost:2177`), so subsequent visits skip the permission dialog.
+
+The bundled client is updated before each rift-local release via `scripts/bundle-client.sh`, which builds the SPA from the rift-transcription repository and copies the output into the package.
+
+**`--open` target resolution:**
+
+| `--open` value     | URL opened                                                     |
+|--------------------|----------------------------------------------------------------|
+| *(no argument)*    | `http://localhost:{port}/?source=local&autoconnect=true&autolisten=true` |
+| `hosted`           | `https://rift-transcription.vercel.app/?source=local&autoconnect=true&autolisten=true` |
+| `dev`              | `http://localhost:5173/?source=local&autoconnect=true&autolisten=true`   |
+| `dev:PORT`         | `http://localhost:PORT/?source=local&autoconnect=true&autolisten=true`   |
+| URL                | Used as-is (no query params appended)                          |
 
 ### CLI Commands (no server needed)
 

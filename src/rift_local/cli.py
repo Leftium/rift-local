@@ -49,13 +49,14 @@ def main() -> None:
     serve_parser.add_argument(
         "--open",
         nargs="?",
-        const="hosted",
+        const="bundled",
         default=None,
         metavar="TARGET",
         help=(
             "Open browser to RIFT Transcription client. "
-            'No argument: hosted app. "dev": localhost:5173. '
-            '"dev:PORT": localhost:PORT. URL: opened as-is.'
+            'No argument: bundled client. "hosted": Vercel app. '
+            '"dev": localhost:5173. "dev:PORT": localhost:PORT. '
+            "URL: opened as-is."
         ),
     )
 
@@ -85,23 +86,27 @@ def main() -> None:
 
 _HOSTED_URL = "https://rift-transcription.vercel.app"
 _DEV_URL = "http://localhost:5173"
+_LAUNCH_PARAMS = "?source=local&autoconnect=true&autolisten=true"
 
 
-def _resolve_open_target(target: str) -> str:
+def _resolve_open_target(target: str, *, server_port: int) -> str:
     """Resolve an ``--open`` target value to a full URL.
 
-    - ``"hosted"`` (the ``const`` when no argument given) -> hosted app URL
+    - ``"bundled"`` (the ``const`` when no argument given) -> bundled client
+    - ``"hosted"`` -> Vercel deployment
     - ``"dev"`` -> localhost:5173
     - ``"dev:PORT"`` -> localhost:PORT
-    - anything else -> treated as a URL, used as-is
+    - anything else -> treated as a URL, used as-is (no params appended)
     """
+    if target == "bundled":
+        return f"http://localhost:{server_port}/{_LAUNCH_PARAMS}"
     if target == "hosted":
-        return _HOSTED_URL
+        return f"{_HOSTED_URL}/{_LAUNCH_PARAMS}"
     if target == "dev":
-        return _DEV_URL
+        return f"{_DEV_URL}/{_LAUNCH_PARAMS}"
     if target.startswith("dev:"):
         port = target.split(":", 1)[1]
-        return f"http://localhost:{port}"
+        return f"http://localhost:{port}/{_LAUNCH_PARAMS}"
     return target
 
 
@@ -149,7 +154,7 @@ def _cmd_serve(args: argparse.Namespace) -> None:
     print(f"WS:      ws://{args.host}:{args.port}/ws")
 
     if args.open is not None:
-        url = _resolve_open_target(args.open)
+        url = _resolve_open_target(args.open, server_port=args.port)
         print(f"Browser: {url}")
         _open_browser_delayed(url)
 
