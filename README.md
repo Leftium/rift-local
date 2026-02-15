@@ -67,7 +67,10 @@ Moonshine models are downloaded automatically by the `moonshine-voice` library o
 Start the WebSocket server with any model:
 
 ```bash
-# Moonshine (default)
+# Start server and open RIFT Transcription in your browser
+rift-local serve --open
+
+# Moonshine (default model)
 rift-local serve
 
 # sherpa-onnx
@@ -75,6 +78,15 @@ rift-local serve --model nemotron-en
 
 # Custom host/port
 rift-local serve --model moonshine-en-tiny --host 0.0.0.0 --port 8080
+```
+
+The `--open` flag launches [RIFT Transcription](https://rift-transcription.vercel.app) in your browser, pre-configured to connect to the local server. The voice source is set to "Local" automatically — just click to start the mic.
+
+For local development of the RIFT Transcription client:
+
+```bash
+rift-local serve --open dev          # opens http://localhost:5173
+rift-local serve --open dev:3000     # custom port
 ```
 
 The server auto-downloads the model on first run, then listens on:
@@ -89,6 +101,7 @@ The server auto-downloads the model on first run, then listens on:
 | `--host` | `127.0.0.1` | Bind address |
 | `--port` | `2177` | Server port |
 | `--threads` | `2` | Inference threads |
+| `--open` | off | Open browser to RIFT Transcription client |
 
 ## WebSocket protocol
 
