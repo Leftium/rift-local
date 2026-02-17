@@ -25,26 +25,26 @@ rift-local serve \
 
 ## Implementation Status
 
-| Component | Status | Notes |
-| --- | --- | --- |
-| FastAPI server (WS + HTTP `/info`) | **Done** | Phase 1 |
-| sherpa-onnx online (streaming) adapter | **Done** | Full field serialization, NeMo confidence detection |
-| `info` handshake with model metadata | **Done** | Dynamic `features.confidence` based on model type |
-| Model registry (5 models) | **Done** | Nemotron, Zipformer, 3 Moonshine |
-| Auto-download (GitHub tarballs) | **Done** | With progress bar, extraction, cache validation |
-| `serve`, `list` CLI commands | **Done** | Phase 1 |
-| Tests (mock + integration) | **Done** | Phase 1 |
-| Moonshine backend adapter | **Done** | Pull wrapper around push API; 3 streaming models |
-| PyPI publication infrastructure | **Done** | Build script, TestPyPI verified |
-| Multi-model loading (`--asr` repeatable) | Not started | Phase 2 |
-| sherpa-onnx offline (batch) adapter | Not started | Phase 2 |
-| Batch model registry entries (Parakeet TDT) | Not started | Phase 2 |
-| HTTP `POST /transcribe` | Not started | Phase 2 |
-| `rift-local transcribe` CLI command | Not started | Phase 2 |
-| mlx-whisper backend adapter | Not started | Phase 2 |
-| `transcribe`, `transform` CLI | Not started | Phase 2-3 |
-| LLM backends (mlx-lm, Ollama) | Not started | Phase 3 |
-| HTTP `POST /transform` | Not started | Phase 3 |
+| Component                                   | Status      | Notes                                               |
+| ------------------------------------------- | ----------- | --------------------------------------------------- |
+| FastAPI server (WS + HTTP `/info`)          | **Done**    | Phase 1                                             |
+| sherpa-onnx online (streaming) adapter      | **Done**    | Full field serialization, NeMo confidence detection |
+| `info` handshake with model metadata        | **Done**    | Dynamic `features.confidence` based on model type   |
+| Model registry (5 models)                   | **Done**    | Nemotron, Zipformer, 3 Moonshine                    |
+| Auto-download (GitHub tarballs)             | **Done**    | With progress bar, extraction, cache validation     |
+| `serve`, `list` CLI commands                | **Done**    | Phase 1                                             |
+| Tests (mock + integration)                  | **Done**    | Phase 1                                             |
+| Moonshine backend adapter                   | **Done**    | Pull wrapper around push API; 3 streaming models    |
+| PyPI publication infrastructure             | **Done**    | Build script, TestPyPI verified                     |
+| Multi-model loading (`--asr` repeatable)    | Not started | Phase 2                                             |
+| sherpa-onnx offline (batch) adapter         | Not started | Phase 2                                             |
+| Batch model registry entries (Parakeet TDT) | Not started | Phase 2                                             |
+| HTTP `POST /transcribe`                     | Not started | Phase 2                                             |
+| `rift-local transcribe` CLI command         | Not started | Phase 2                                             |
+| mlx-whisper backend adapter                 | Not started | Phase 2                                             |
+| `transcribe`, `transform` CLI               | Not started | Phase 2-3                                           |
+| LLM backends (mlx-lm, Ollama)               | Not started | Phase 3                                             |
+| HTTP `POST /transform`                      | Not started | Phase 3                                             |
 
 ---
 
@@ -134,27 +134,37 @@ Client opens `ws://localhost:{port}/ws` (default port: 2177). The root path `ws:
 
 **Model selection:** To use a specific loaded ASR model, append a query parameter: `ws://localhost:{port}/ws?asr=parakeet-en-v2`. If omitted, the server uses the default model (first `--asr` from startup). If the requested model is not loaded, the server sends an error message and closes the connection.
 
+**Batch mode:** Append `mode=batch` to suppress interim results: `ws://localhost:{port}/ws?asr=parakeet-en-v2&mode=batch`. This is used when RIFT sends pre-recorded audio for re-transcription. The server still performs endpoint detection and sends segmented finals (`is_final: true`) -- the only difference is that interim results (`is_final: false`) are not sent. This avoids unnecessary DOM churn in the client when the consumer only needs the final result. If omitted, defaults to `mode=live` (interims sent as usual). Progress tracking is a client-side concern -- RIFT knows the total audio duration and calculates progress from sent-vs-total bytes and `start_time` on returned transcripts.
+
+| Behavior           | `mode=live` (default)     | `mode=batch`                 |
+| ------------------ | ------------------------- | ---------------------------- |
+| Interim results    | Sent on every text change | Suppressed                   |
+| Endpoint detection | Active                    | Active (unchanged)           |
+| Segmentation       | By endpoint               | By endpoint (unchanged)      |
+| Final results      | Sent per segment          | Sent per segment (unchanged) |
+| Progress           | N/A                       | Client-side                  |
+
 ### Handshake (server -> client)
 
 On connection, the server sends an `info` message before any transcription results:
 
 ```json
 {
-	"type": "info",
-	"model": "nemotron-en",
-	"model_display": "Nemotron Streaming EN 0.6B (int8)",
-	"params": "0.6B",
-	"backend": "sherpa-onnx",
-	"streaming": true,
-	"languages": ["en"],
-	"features": {
-		"timestamps": true,
-		"confidence": false,
-		"endpoint_detection": true,
-		"diarization": false
-	},
-	"sample_rate": 16000,
-	"version": "0.1.0"
+  "type": "info",
+  "model": "nemotron-en",
+  "model_display": "Nemotron Streaming EN 0.6B (int8)",
+  "params": "0.6B",
+  "backend": "sherpa-onnx",
+  "streaming": true,
+  "languages": ["en"],
+  "features": {
+    "timestamps": true,
+    "confidence": false,
+    "endpoint_detection": true,
+    "diarization": false
+  },
+  "sample_rate": 16000,
+  "version": "0.1.0"
 }
 ```
 
@@ -188,17 +198,17 @@ The string `"Done"` (text frame) signals end of audio. The server flushes any re
 
 ```json
 {
-	"type": "result",
-	"text": "Hello world",
-	"tokens": [" Hello", " world"],
-	"timestamps": [0.32, 0.64],
-	"ys_probs": [-0.12, -0.08],
-	"lm_probs": [-0.03, -0.02],
-	"context_scores": [0.0, 0.0],
-	"start_time": 0.0,
-	"segment": 0,
-	"is_final": false,
-	"model": "nemotron-en"
+  "type": "result",
+  "text": "Hello world",
+  "tokens": [" Hello", " world"],
+  "timestamps": [0.32, 0.64],
+  "ys_probs": [-0.12, -0.08],
+  "lm_probs": [-0.03, -0.02],
+  "context_scores": [0.0, 0.0],
+  "start_time": 0.0,
+  "segment": 0,
+  "is_final": false,
+  "model": "nemotron-en"
 }
 ```
 
@@ -433,19 +443,19 @@ When the server port is non-default (not 2177), the WebSocket URL is included:
 https://rift-transcription.vercel.app/?source=local&url=ws://localhost:3000
 ```
 
-| Parameter | Value                      | Effect                                              |
-|-----------|----------------------------|-----------------------------------------------------|
-| `source`  | `local`                    | Preselect the "Local" ASR source, connect WebSocket  |
-| `url`     | `ws://localhost:{port}`    | Override default WebSocket URL (only if port != 2177)|
+| Parameter | Value                   | Effect                                                |
+| --------- | ----------------------- | ----------------------------------------------------- |
+| `source`  | `local`                 | Preselect the "Local" ASR source, connect WebSocket   |
+| `url`     | `ws://localhost:{port}` | Override default WebSocket URL (only if port != 2177) |
 
 **`--open` target resolution:**
 
-| `--open` value | URL opened                                                           |
-|----------------|----------------------------------------------------------------------|
-| *(no argument)*| `https://rift-transcription.vercel.app/?source=local`                |
-| `dev`          | `http://localhost:5173/?source=local`                                |
-| `dev:PORT`     | `http://localhost:PORT/?source=local`                                |
-| URL            | Used as-is (no query params appended)                                |
+| `--open` value  | URL opened                                            |
+| --------------- | ----------------------------------------------------- |
+| _(no argument)_ | `https://rift-transcription.vercel.app/?source=local` |
+| `dev`           | `http://localhost:5173/?source=local`                 |
+| `dev:PORT`      | `http://localhost:PORT/?source=local`                 |
+| URL             | Used as-is (no query params appended)                 |
 
 When `--port` is not 2177, `&url=ws://localhost:{port}` is appended to all resolved URLs.
 
@@ -855,6 +865,7 @@ tokens = list(stream.result.tokens)
 ```
 
 **Key differences from online adapter:**
+
 - No `is_ready()` / `is_endpoint()` loop -- single `decode()` call on complete audio
 - `model_type="nemo_transducer"` required for Parakeet TDT models
 - No endpoint detection (`features.endpoint_detection: false`)
@@ -870,6 +881,7 @@ tokens = list(stream.result.tokens)
 Uses `moonshine-voice` Python package (`pip install moonshine-voice>=0.0.48`). Moonshine's native API is push/event-driven (`LineStarted`, `LineTextChanged`, `LineCompleted`), but the adapter wraps it behind the same pull-based `BackendAdapter` protocol used by sherpa-onnx. This follows the design principle from transcription-rs: **pull is the better internal abstraction** — you can build push on top of pull, but not the reverse.
 
 **Pull adapter strategy:**
+
 - `feed_audio()` calls `stream.add_audio()` with a very large `update_interval` (999999s) to suppress Moonshine's auto-update.
 - `decode()` explicitly calls `stream.update_transcription()` to pull the current transcript state.
 - `get_result()` reads the latest `TranscriptLine.text` from the transcript.
@@ -878,21 +890,21 @@ Uses `moonshine-voice` Python package (`pip install moonshine-voice>=0.0.48`). M
 
 **Model download:** Moonshine manages its own model cache via `get_model_for_language()`. The adapter calls this at init, passing the language code and `ModelArch` enum (e.g. `MEDIUM_STREAMING`). No tarball extraction needed — the library handles download and caching internally.
 
-| Moonshine transcript state | rift-local mapping                                                        |
-| -------------------------- | ------------------------------------------------------------------------- |
-| New line (not complete)    | Interim: `is_final: false` (note: Moonshine interims are non-monotonic)   |
-| Line `is_complete`         | Endpoint: `is_final: true`                                                |
-| Next line after endpoint   | New `segment` ID (auto-incremented by server)                             |
+| Moonshine transcript state | rift-local mapping                                                      |
+| -------------------------- | ----------------------------------------------------------------------- |
+| New line (not complete)    | Interim: `is_final: false` (note: Moonshine interims are non-monotonic) |
+| Line `is_complete`         | Endpoint: `is_final: true`                                              |
+| Next line after endpoint   | New `segment` ID (auto-incremented by server)                           |
 
 Moonshine does not provide per-token timestamps or log-probs. Those fields will be absent from results. The `info` handshake reports `features.timestamps: false` and `features.confidence: false` so RIFT can adapt its UI (e.g. disable per-word confidence coloring).
 
 **Available streaming models (Gen 2):**
 
-| Registry name        | ModelArch          | Params | WER (OpenASR) | Latency (MacBook Pro) |
-| -------------------- | ------------------ | ------ | ------------- | --------------------- |
-| `moonshine-tiny-en`  | `TINY_STREAMING`   | 34M    | 12.00%        | ~50ms                 |
-| `moonshine-small-en` | `SMALL_STREAMING`  | 123M   | 7.84%         | ~148ms                |
-| `moonshine-medium-en`| `MEDIUM_STREAMING`  | 245M   | 6.65%         | ~258ms                |
+| Registry name         | ModelArch          | Params | WER (OpenASR) | Latency (MacBook Pro) |
+| --------------------- | ------------------ | ------ | ------------- | --------------------- |
+| `moonshine-tiny-en`   | `TINY_STREAMING`   | 34M    | 12.00%        | ~50ms                 |
+| `moonshine-small-en`  | `SMALL_STREAMING`  | 123M   | 7.84%         | ~148ms                |
+| `moonshine-medium-en` | `MEDIUM_STREAMING` | 245M   | 6.65%         | ~258ms                |
 
 **Install:** `pip install rift-local[moonshine]`
 
@@ -957,13 +969,13 @@ Models auto-download from HuggingFace on first use via `mlx_whisper`'s built-in 
 
 ### Future ASR backends
 
-| Backend          | Engine                          | Notes                                                                                   |
-| ---------------- | ------------------------------- | --------------------------------------------------------------------------------------- |
-| `qwen3-asr`      | vLLM with OpenAI-compatible API | Adapter translates between vLLM's streaming HTTP/SSE and rift-local's WS protocol       |
-| `qwen3-asr-mlx`  | mlx-lm with Qwen3-ASR weights   | MLX-converted Qwen3-ASR models (0.6B, 1.7B) available on mlx-community HF org           |
-| `parakeet-mlx`   | Custom MLX inference            | NVIDIA Parakeet CTC/TDT models converted to MLX (potentially streamable)                |
-| `nemotron-cpp`   | nemotron-asr.cpp subprocess     | Pure C++/ggml, no Python deps; adapter communicates via stdin/stdout pipe               |
-| `faster-whisper` | faster-whisper library          | Offline (not streaming), but useful for high-accuracy batch re-transcription            |
+| Backend          | Engine                          | Notes                                                                             |
+| ---------------- | ------------------------------- | --------------------------------------------------------------------------------- |
+| `qwen3-asr`      | vLLM with OpenAI-compatible API | Adapter translates between vLLM's streaming HTTP/SSE and rift-local's WS protocol |
+| `qwen3-asr-mlx`  | mlx-lm with Qwen3-ASR weights   | MLX-converted Qwen3-ASR models (0.6B, 1.7B) available on mlx-community HF org     |
+| `parakeet-mlx`   | Custom MLX inference            | NVIDIA Parakeet CTC/TDT models converted to MLX (potentially streamable)          |
+| `nemotron-cpp`   | nemotron-asr.cpp subprocess     | Pure C++/ggml, no Python deps; adapter communicates via stdin/stdout pipe         |
+| `faster-whisper` | faster-whisper library          | Offline (not streaming), but useful for high-accuracy batch re-transcription      |
 
 New backends are added as optional dependency groups: `pip install rift-local[qwen]`, etc.
 
@@ -1031,17 +1043,21 @@ Batch transcription can use either a streaming model (audio fed through incremen
 
 ### From RIFT (WebSocket)
 
-When RIFT re-transcribes a segment or full recording, the audio is already in the browser's memory as Float32 PCM. RIFT opens a new WebSocket connection with `?asr=parakeet-en-v2` (or whichever model is desired) and sends audio at read speed (faster than real-time).
+When RIFT re-transcribes a segment or full recording, the audio is already in the browser's `RecordingBuffer` as Float32 PCM. RIFT opens a new WebSocket connection with `?asr=parakeet-en-v2&mode=batch` and sends audio at read speed (faster than real-time).
 
-- **With a streaming model:** frames are processed incrementally, same as live. Results stream back as they're recognized.
-- **With a batch model:** frames are buffered until `"Done"`, then processed in a single pass. Results arrive all at once after processing completes.
+The `mode=batch` parameter suppresses interim results -- RIFT only receives finals with endpoint data, avoiding unnecessary DOM churn from partial text replacements. Endpoint detection remains active so the result preserves natural speech boundaries (useful for pause markers in ProseMirror). See [Connection](#connection) for the full `mode=batch` specification.
+
+- **With a streaming model:** frames are processed incrementally. Only final results are sent back (interims suppressed by `mode=batch`).
+- **With a batch model:** frames are buffered until `"Done"`, then processed in a single pass. Results arrive all at once after processing completes (all finals, no interims regardless of mode).
+
+**Progress tracking** is a client-side concern. RIFT knows the total audio duration from its `RecordingBuffer` and can calculate progress from bytes sent vs total, or from `start_time` on returned transcript segments vs total duration. The server does not send progress messages.
 
 This is the preferred path for RIFT because:
 
 - Audio is already in Float32 PCM (no encoding/decoding needed)
-- Results stream back incrementally when using a streaming model
 - No file I/O or multipart encoding overhead
 - Model selection via query parameter
+- `mode=batch` gives clean final-only results for selection replacement
 
 ### From external tools (HTTP)
 
@@ -1075,12 +1091,12 @@ Batch-only models (sherpa-onnx offline, mlx-whisper) can serve live WebSocket au
 
 ### UX implications
 
-| Aspect | True streaming | Simulated streaming |
-|---|---|---|
-| Interim results (partial words) | Yes, word-by-word | No -- silence until utterance complete |
-| Latency to first result | ~100-300ms | ~1-3s (depends on utterance length + VAD delay) |
-| Accuracy | Good | Better (full-context encoder) |
-| `info.streaming` | `true` | `false` |
+| Aspect                          | True streaming    | Simulated streaming                             |
+| ------------------------------- | ----------------- | ----------------------------------------------- |
+| Interim results (partial words) | Yes, word-by-word | No -- silence until utterance complete          |
+| Latency to first result         | ~100-300ms        | ~1-3s (depends on utterance length + VAD delay) |
+| Accuracy                        | Good              | Better (full-context encoder)                   |
+| `info.streaming`                | `true`            | `false`                                         |
 
 RIFT should adapt its UI when `streaming: false` -- for example, showing a "processing..." indicator during speech instead of live partial text. The client already handles `is_final: true` segments, so the result format is identical.
 
