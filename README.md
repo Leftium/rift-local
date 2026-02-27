@@ -18,22 +18,20 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install rift-local
 ```
 
-### Backend extras
+Moonshine is included by default — `rift-local serve` works immediately after install.
 
-rift-local supports multiple ASR backends, each installed as an optional extra:
+### Optional: sherpa-onnx backend
+
+For additional sherpa-onnx models (Nemotron, Kroko):
 
 ```bash
-uv tool install "rift-local[sherpa]"             # sherpa-onnx (Nemotron, Kroko)
-uv tool install "rift-local[moonshine]"          # Moonshine Gen 2
-uv tool install "rift-local[sherpa,moonshine]"   # both
+uv tool install "rift-local[sherpa]"
 ```
 
 Or with pip (inside a venv):
 
 ```bash
-pip install rift-local[sherpa]             # sherpa-onnx (Nemotron, Kroko)
-pip install rift-local[moonshine]          # Moonshine Gen 2 (via moonshine-voice)
-pip install rift-local[sherpa,moonshine]   # both
+pip install rift-local[sherpa]
 ```
 
 For development (includes pytest):
