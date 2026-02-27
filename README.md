@@ -4,7 +4,17 @@ Local inference server for [RIFT Transcription](https://github.com/Leftium/rift-
 
 ## Install
 
+Requires Python 3.10+. Install with [uv](https://docs.astral.sh/uv/):
+
+```bash
+brew install uv              # macOS (or: curl -LsSf https://astral.sh/uv/install.sh | sh)
+uv tool install rift-local
 ```
+
+Or with pip in a virtual environment:
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate
 pip install rift-local
 ```
 
@@ -13,21 +23,23 @@ pip install rift-local
 rift-local supports multiple ASR backends, each installed as an optional extra:
 
 ```bash
-pip install rift-local[sherpa]      # sherpa-onnx (Nemotron, Kroko)
-pip install rift-local[moonshine]   # Moonshine Gen 2 (via moonshine-voice)
-pip install rift-local[sherpa,moonshine]  # both
+uv tool install "rift-local[sherpa]"             # sherpa-onnx (Nemotron, Kroko)
+uv tool install "rift-local[moonshine]"          # Moonshine Gen 2
+uv tool install "rift-local[sherpa,moonshine]"   # both
 ```
 
-On Apple Silicon, add MLX support for future GPU-accelerated batch transcription:
+Or with pip (inside a venv):
 
 ```bash
-pip install rift-local[mlx]
+pip install rift-local[sherpa]             # sherpa-onnx (Nemotron, Kroko)
+pip install rift-local[moonshine]          # Moonshine Gen 2 (via moonshine-voice)
+pip install rift-local[sherpa,moonshine]   # both
 ```
 
 For development (includes pytest):
 
 ```bash
-pip install rift-local[dev]
+pip install -e ".[dev]"
 ```
 
 ## Models

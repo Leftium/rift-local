@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "rift-local"
-version = "0.0.1"
+version = "0.0.2"
 description = "Local inference server for RIFT Transcription — streaming and batch speech recognition, LLM transforms, and CLI transcription backed by local models."
 readme = "README.md"
 license = "MIT"

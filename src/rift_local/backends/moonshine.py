@@ -36,9 +36,9 @@ except ImportError:
 _ARCH_MAP: dict[str, Any] = {}
 if ModelArch is not None:
     _ARCH_MAP = {
-        "moonshine-tiny-en": ModelArch.TINY_STREAMING,
-        "moonshine-small-en": ModelArch.SMALL_STREAMING,
-        "moonshine-medium-en": ModelArch.MEDIUM_STREAMING,
+        "moonshine-en-tiny": ModelArch.TINY_STREAMING,
+        "moonshine-en-small": ModelArch.SMALL_STREAMING,
+        "moonshine-en-medium": ModelArch.MEDIUM_STREAMING,
     }
 
 
