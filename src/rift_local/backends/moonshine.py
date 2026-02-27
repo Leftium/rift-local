@@ -1,11 +1,16 @@
 """Moonshine streaming ASR backend adapter.
 
-Wraps the moonshine-voice library's push-based Transcriber/Stream API
-behind rift-local's pull-based BackendAdapter protocol.  The adapter
-calls ``stream.add_audio()`` to feed samples and
-``stream.update_transcription()`` to pull the current transcript state,
-mapping Moonshine's ``TranscriptLine`` objects to rift-local ``Result``
-messages.
+Wraps the moonshine-voice library's Transcriber/Stream API behind
+rift-local's BackendAdapter protocol.  Moonshine's C++ core is
+pull-based: ``add_audio()`` buffers samples and
+``update_transcription()`` synchronously runs VAD + inference,
+returning a transcript with differential flags.  The Python wrapper
+adds synthetic event dispatch on top, but the underlying mechanism
+is always caller-polled.
+
+This adapter bypasses Moonshine's auto-update interval and calls
+``update_transcription()`` explicitly in ``decode()``, giving
+rift-local direct control over inference timing.
 
 See: https://github.com/moonshine-ai/moonshine
 """
@@ -75,15 +80,15 @@ def ensure_moonshine_model(entry: ModelEntry) -> tuple[str, Any]:
 class MoonshineAdapter:
     """Wraps ``moonshine_voice.Transcriber`` behind the BackendAdapter protocol.
 
-    Moonshine's native API is event/push-driven: feed audio via
-    ``stream.add_audio()`` and receive ``LineStarted``/``LineTextChanged``/
-    ``LineCompleted`` events.  This adapter converts that to pull semantics:
+    Moonshine's C++ core is pull-based: audio is buffered via
+    ``add_audio()`` and inference runs only when the caller invokes
+    ``update_transcription()``.  The Python wrapper auto-polls on a
+    timer; this adapter disables that (``update_interval=999_999``)
+    and polls explicitly:
 
-    - ``feed_audio()`` stores samples via ``stream.add_audio()`` but
-      suppresses Moonshine's auto-update by using a very large
-      ``update_interval``.
-    - ``decode()`` explicitly calls ``stream.update_transcription()``
-      to pull the current state.
+    - ``feed_audio()`` buffers samples via ``stream.add_audio()``.
+    - ``decode()`` calls ``stream.update_transcription()`` to run
+      inference and get the current transcript.
     - ``get_result()`` reads the latest transcript line.
     - ``is_endpoint()`` detects when the active line has completed.
     """

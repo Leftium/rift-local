@@ -930,11 +930,12 @@ wheels = [
 
 [[package]]
 name = "rift-local"
-version = "0.0.2"
+version = "0.0.3"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
     { name = "httpx" },
+    { name = "moonshine-voice" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "pydantic" },
@@ -945,9 +946,6 @@ dependencies = [
 dev = [
     { name = "pytest" },
 ]
-moonshine = [
-    { name = "moonshine-voice" },
-]
 sherpa = [
     { name = "onnx" },
     { name = "sherpa-onnx" },
@@ -957,7 +955,7 @@ sherpa = [
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", specifier = ">=0.28" },
-    { name = "moonshine-voice", marker = "extra == 'moonshine'", specifier = ">=0.0.48" },
+    { name = "moonshine-voice", specifier = ">=0.0.48" },
     { name = "numpy", specifier = ">=1.24" },
     { name = "onnx", marker = "extra == 'sherpa'", specifier = ">=1.16" },
     { name = "pydantic", specifier = ">=2.0" },
@@ -965,7 +963,7 @@ requires-dist = [
     { name = "sherpa-onnx", marker = "extra == 'sherpa'", specifier = ">=1.11" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.34" },
 ]
-provides-extras = ["sherpa", "moonshine", "mlx", "dev"]
+provides-extras = ["sherpa", "mlx", "dev"]
 
 [[package]]
 name = "sherpa-onnx"
